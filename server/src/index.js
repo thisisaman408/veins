@@ -8,7 +8,6 @@ import {
   advanceRound,
   buildHistory,
   buildRoundPayload,
-  buildRevealPayload,
   clearRevealTimer,
   createSession,
   joinSession,
