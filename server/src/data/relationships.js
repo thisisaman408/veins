@@ -2,32 +2,37 @@ export const relationshipProfiles = {
   romantic: {
     type: "romantic",
     label: "BF/GF or partners",
-    description: "You are emotionally close, but some answers can create friction fast."
+    description: "Emotionally and physically close. The stakes are high, and one wrong truth can start a fire."
   },
   friends: {
     type: "friends",
     label: "Friends",
-    description: "You know each other casually, so the read depends on habits more than history."
+    description: "You think you know them. But everyone hides something from the people they eat lunch with."
+  },
+  best_friends: {
+    type: "best_friends",
+    label: "Best friends",
+    description: "You know their darkest side — or you think you do. Best friends keep the sharpest secrets."
   },
   close_friends: {
     type: "close_friends",
     label: "Close friends",
-    description: "You know each other very well, which makes wrong guesses more interesting."
+    description: "Close enough to hurt each other. Close enough to know exactly where to push."
   },
-  siblings: {
-    type: "siblings",
-    label: "Brother/sister/siblings",
-    description: "You share history, but you may hesitate to reveal a few personal things."
+  brother_sister: {
+    type: "brother_sister",
+    label: "Brother & Sister",
+    description: "Blood ties, shared walls, unspoken boundaries. Some things siblings never say — until now."
   },
   mentor_friend: {
     type: "mentor_friend",
     label: "Mentor and friend",
-    description: "There is trust, but respect and image-management can affect honesty."
+    description: "Respect, hierarchy, and the things you hide from the person you look up to."
   },
   just_close: {
     type: "just_close",
     label: "Just close to each other",
-    description: "You have a bond, but the boundaries are still not fully defined."
+    description: "Undefined. Intense. You don't know where the line is — and that's the point."
   }
 };
 

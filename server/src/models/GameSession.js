@@ -58,7 +58,9 @@ const gameSessionSchema = new mongoose.Schema(
       host: playerSchema,
       guest: playerSchema
     },
-    relationship: relationshipSchema,
+    // Each player picks privately — the other never sees it
+    hostRelationship: relationshipSchema,
+    guestRelationship: relationshipSchema,
     firstTargetSlot: { type: String, enum: ["host", "guest"] },
     status: {
       type: String,
@@ -67,8 +69,14 @@ const gameSessionSchema = new mongoose.Schema(
     },
     currentRound: { type: Number, default: 0 },
     maxRounds: { type: Number, default: 10 },
-    questionOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
     roundsData: [roundSchema],
+    chatMessages: [
+      {
+        senderName: String,
+        text: String,
+        at: { type: Date, default: Date.now }
+      }
+    ],
     auditLog: [
       {
         at: { type: Date, default: Date.now },
@@ -76,13 +84,6 @@ const gameSessionSchema = new mongoose.Schema(
         actorSocketId: String,
         action: String,
         details: mongoose.Schema.Types.Mixed
-      }
-    ],
-    chatMessages: [
-      {
-        senderName: String,
-        text: String,
-        at: { type: Date, default: Date.now }
       }
     ],
     finalMetrics: {

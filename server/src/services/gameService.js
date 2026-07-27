@@ -41,6 +41,14 @@ function getSlotForSocket(session, socketId) {
   return null;
 }
 
+// Get the relationship that THIS player chose (private to them)
+function getMyRelationship(session, socketId) {
+  const slot = getSlotForSocket(session, socketId);
+  if (slot === "host") return session.hostRelationship;
+  if (slot === "guest") return session.guestRelationship;
+  return session.hostRelationship; // fallback
+}
+
 function getRoundSlots(session, roundNumber = session.currentRound) {
   const firstTargetSlot = session.firstTargetSlot ?? "host";
   const targetSlot = (roundNumber - 1) % 2 === 0
@@ -92,7 +100,7 @@ export async function createSession(hostSocketId, payload = {}) {
     roomCode = generateRoomCode();
   }
 
-  const relationship = getRelationshipProfile(payload.relationshipType);
+  const hostRelationship = getRelationshipProfile(payload.relationshipType);
   const host = {
     socketId: hostSocketId,
     name: cleanName(payload.playerName, "Player 1"),
@@ -103,7 +111,7 @@ export async function createSession(hostSocketId, payload = {}) {
     roomCode,
     hostSocketId,
     players: { host },
-    relationship,
+    hostRelationship,
     maxRounds: Number(payload.maxRounds) || 10,
     finalMetrics: { roundsWon: 0, roundsLost: 0 },
     chatMessages: [],
@@ -112,7 +120,7 @@ export async function createSession(hostSocketId, payload = {}) {
         actorName: host.name,
         actorSocketId: host.socketId,
         action: "room_created",
-        details: { relationship }
+        details: { hostRelationship }
       }
     ]
   });
@@ -134,13 +142,17 @@ export async function joinSession(roomCode, guestSocketId, payload = {}) {
     slot: "guest"
   };
 
+  const guestRelationship = getRelationshipProfile(payload.relationshipType);
+
   session.guestSocketId = guestSocketId;
   session.players.guest = guest;
+  session.guestRelationship = guestRelationship;
   session.status = "IN_PROGRESS";
   session.currentRound = 1;
   session.firstTargetSlot = Math.random() >= 0.5 ? "host" : "guest";
   session.roundsData = [buildRound(session, 1)];
   addAudit(session, guest, "player_joined", {
+    guestRelationship,
     firstTargetName: session.roundsData[0].targetName,
     firstObserverName: session.roundsData[0].observerName
   });
@@ -159,9 +171,15 @@ export function buildRoundPayload(session, socketId) {
       ? "observer"
       : "spectator";
 
+  // Each player only sees THEIR OWN relationship choice
+  const myRelationship = getMyRelationship(session, socketId);
+
+  // Question suggestions are based on the OBSERVER's own relationship type
+  const observerRelationship = getMyRelationship(session, round.observerSocketId);
+
   return {
     roomCode: session.roomCode,
-    relationship: session.relationship,
+    myRelationship,
     players: session.players,
     mySlot,
     myRole,
@@ -170,7 +188,7 @@ export function buildRoundPayload(session, socketId) {
     lieIndex: round.lieIndex,
     observerGuessedLieIndex: round.observerGuessedLieIndex,
     targetExplanation: round.targetExplanation,
-    questionSuggestions: buildQuestionSuggestions(session.relationship.type, session.currentRound),
+    questionSuggestions: buildQuestionSuggestions(observerRelationship?.type ?? "close_friends", session.currentRound),
     phase: round.phase,
     roundNumber: session.currentRound,
     maxRounds: session.maxRounds,
@@ -249,14 +267,13 @@ export async function submitObserverGuess({ roomCode, socketId, guessedLieIndex 
   round.observerGuessedLieIndex = guessedLieIndex;
   
   const isCorrect = guessedLieIndex === round.lieIndex;
+  if (!session.finalMetrics) session.finalMetrics = { roundsWon: 0, roundsLost: 0 };
   if (isCorrect) {
-    session.finalMetrics = session.finalMetrics || { roundsWon: 0, roundsLost: 0 };
     session.finalMetrics.roundsWon += 1;
     round.phase = "TARGET_EXPLANATION";
   } else {
-    session.finalMetrics = session.finalMetrics || { roundsWon: 0, roundsLost: 0 };
     session.finalMetrics.roundsLost += 1;
-    round.phase = "REVEAL"; // Skip explanation if they guess wrong
+    round.phase = "REVEAL";
   }
 
   addRoundAudit(round, actor, "observer_guessed", { guessedLieIndex, isCorrect });
@@ -317,15 +334,13 @@ export async function advanceRound(roomCode, socketId) {
 export async function completeSession(session) {
   session.status = "COMPLETED";
   session.roundsData[session.currentRound - 1].phase = "COMPLETE";
+  // Clear chat on game end
+  session.chatMessages = [];
   addAudit(session, { name: "System" }, "game_completed", {
     finalMetrics: session.finalMetrics
   });
   await session.save();
   return session;
-}
-
-export function buildRevealPayload(session, round) {
-  return buildRoundPayload(session, session.hostSocketId); // Reusing standard state
 }
 
 export async function buildHistory(session) {

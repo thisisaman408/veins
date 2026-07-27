@@ -1,178 +1,207 @@
-// Each suggestion is now a SET of 3 prompts for the observer to ask.
-// The observer can edit them or type their own.
+// Dark, uncomfortable question sets — 3 prompts per suggestion.
+// These are designed to push boundaries and force real honesty.
 
 const templates = {
   romantic: [
     {
       id: "romantic-1",
-      category: "Intimacy & Distance",
+      category: "Betrayal & Doubt",
       prompts: [
-        "What would make you quietly start pulling away in this relationship?",
-        "When do you feel the loneliest — even when we are together?",
-        "What is the one thing you want from me that you have never said directly?"
+        "Have you ever imagined what your life would look like if you had ended up with someone else?",
+        "Is there something your partner does in bed that you have never had the courage to be honest about?",
+        "If someone you were deeply attracted to made a serious move on you tomorrow — and no one would ever know — what would you actually do?"
       ]
     },
     {
       id: "romantic-2",
-      category: "Fears & Honesty",
+      category: "Power & Control",
       prompts: [
-        "What truth about yourself would be hardest to say to a partner?",
-        "Is there something you have been avoiding because you are scared of the answer?",
-        "What is the one thing you are still unsure about in this relationship?"
+        "Do you stay in this relationship because you love them — or because you are afraid of being alone?",
+        "Have you ever gone through their phone, messages, or social media without telling them?",
+        "What is the one thing you have done in this relationship that you would never want them to find out about?"
       ]
     },
     {
       id: "romantic-3",
-      category: "Future & Commitment",
+      category: "The Ugly Truth",
       prompts: [
-        "If I asked for a serious commitment tomorrow, what would your honest gut say?",
-        "What part of a future together excites you — and what quietly worries you?",
-        "If this relationship ended, what is the one thing you would regret not saying?"
+        "If your partner gained significant weight or changed physically, would your attraction survive — honestly?",
+        "Have you ever compared your partner to an ex and wished your partner was more like them?",
+        "Is there a version of yourself you perform around your partner that is not who you really are?"
       ]
     }
   ],
   friends: [
     {
       id: "friends-1",
-      category: "Honesty & Loyalty",
+      category: "Fake Loyalty",
       prompts: [
-        "If I made an embarrassing mistake in public, what would you actually do?",
-        "Have you ever held something back from me to avoid conflict?",
-        "What is the one thing you think about me but never say?"
+        "Have you ever talked badly about this friend behind their back — and meant it?",
+        "If this friend failed publicly, would a small part of you feel relieved or satisfied?",
+        "Is there a secret you know about this friend that you have used to feel superior to them?"
       ]
     },
     {
       id: "friends-2",
-      category: "Drift & Connection",
+      category: "Hidden Judgment",
       prompts: [
-        "If this friendship started fading, would you say something — or let it go?",
-        "Is there something that changed between us that we have never talked about?",
-        "What would it take for you to consider us truly close, not just friends?"
+        "What is the one thing about this friend's life choices that you silently judge them for?",
+        "Have you ever felt embarrassed to be associated with this friend in front of certain people?",
+        "If you had to rank your friendships honestly, where would this person actually fall?"
       ]
     },
     {
       id: "friends-3",
-      category: "Secrets & Trust",
+      category: "Disposable Bonds",
       prompts: [
-        "If I told you something big about myself, would you keep it — or tell someone?",
-        "What is something you have shared with others that you never told me?",
-        "What part of your life would you hide even from a good friend?"
+        "If this friend moved away tomorrow and stopped reaching out, would you actually fight to keep the connection?",
+        "Have you ever stayed friends with someone only because cutting them off felt too awkward?",
+        "What is the real reason you became friends with this person — and is that reason still true?"
+      ]
+    }
+  ],
+  best_friends: [
+    {
+      id: "best_friends-1",
+      category: "Darkest Secrets",
+      prompts: [
+        "What is the one thing you have never told your best friend because you know it would change how they see you forever?",
+        "Have you ever been jealous of your best friend's relationship, career, or life — and hated yourself for it?",
+        "If your best friend asked you to be brutally honest about their biggest flaw, could you actually say it?"
+      ]
+    },
+    {
+      id: "best_friends-2",
+      category: "Loyalty Under Fire",
+      prompts: [
+        "If your best friend's partner told you they were cheating — would you tell your friend, or protect the peace?",
+        "Have you ever chosen someone else — a partner, another friend, an opportunity — over your best friend and never told them?",
+        "Is there something your best friend confided in you that you have told someone else?"
+      ]
+    },
+    {
+      id: "best_friends-3",
+      category: "The Real Bond",
+      prompts: [
+        "Do you think your best friend needs you more than you need them — or is it the other way around?",
+        "If your best friend became extremely successful and you did not, would the friendship survive your ego?",
+        "What is the cruelest thought you have ever had about your best friend — even for a second?"
       ]
     }
   ],
   close_friends: [
     {
       id: "close_friends-1",
-      category: "Hidden Things",
+      category: "Things Left Unsaid",
       prompts: [
-        "What part of your life would you still hide from me, even as a close friend?",
-        "Is there a version of you that I have never seen — and do you want me to?",
-        "What have I got wrong about you that you have never corrected?"
+        "What is the most painful thing you know about this person that they do not know you know?",
+        "Have you ever lied to this friend to protect yourself — not them?",
+        "If this friend read every thought you have ever had about them, would they still want to be close to you?"
       ]
     },
     {
       id: "close_friends-2",
-      category: "Conflict & Feedback",
+      category: "Resentment & Envy",
       prompts: [
-        "If I called you out honestly right now, what would your first reaction be?",
-        "Have you ever been annoyed at me and said nothing? What was it?",
-        "What is something I do that bothers you but you have never mentioned?"
+        "Is there something about this friend's life that makes you feel inadequate about your own?",
+        "Have you ever felt like this friend was performing their closeness with you for an audience?",
+        "What is the one boundary this friend has crossed that you never confronted them about?"
       ]
     },
     {
       id: "close_friends-3",
-      category: "What You Need",
+      category: "Breaking Point",
       prompts: [
-        "What do you want most from this friendship right now — and are you getting it?",
-        "Is there something you have needed from me that you have never asked for?",
-        "What would make you feel like I truly understand you?"
+        "What would this friend have to do for you to cut them off permanently — and how close have they come?",
+        "If you found out this friend had been lying to you about something major for years, would you forgive them?",
+        "Have you ever wished this friendship would just end naturally so you would not have to be the one to walk away?"
       ]
     }
   ],
-  siblings: [
+  brother_sister: [
     {
-      id: "siblings-1",
-      category: "Family & Secrets",
+      id: "brother_sister-1",
+      category: "Family Wounds",
       prompts: [
-        "What would you least want me to know about you — as a sibling?",
-        "Is there something from our family life you have never fully processed?",
-        "What is a decision you made that you know I would question?"
+        "Which parent loved you more — and do you think your sibling knows it too?",
+        "Is there something you saw or heard growing up at home that you have never talked about with your sibling?",
+        "Have you ever resented your sibling for the way your parents treated them differently?"
       ]
     },
     {
-      id: "siblings-2",
-      category: "Family Dynamics",
+      id: "brother_sister-2",
+      category: "Unspoken Boundaries",
       prompts: [
-        "When family drama starts, what is your real role — and what do you wish it was?",
-        "Is there something unfair in our family dynamic you have never said out loud?",
-        "What is the one thing you have always wanted to say to me but held back?"
+        "Is there something about your sibling's personal life — relationships, habits, choices — that genuinely disgusts you but you have never said?",
+        "Have you ever felt protective of your sibling in a way that crossed into controlling?",
+        "What is the one thing about growing up together that still makes you uncomfortable to think about?"
       ]
     },
     {
-      id: "siblings-3",
-      category: "Crisis & Support",
+      id: "brother_sister-3",
+      category: "Blood & Betrayal",
       prompts: [
-        "If I was in a serious crisis tomorrow, what would you actually do?",
-        "What would make you feel like you could really ask me for help?",
-        "Is there a time I let you down that we have never talked about?"
+        "If your sibling asked you to keep a secret from your parents that could ruin the family — would you?",
+        "Have you ever used something personal your sibling told you in confidence as a weapon during a fight?",
+        "If you could go back and grow up without this sibling, would any part of you consider it?"
       ]
     }
   ],
   mentor_friend: [
     {
       id: "mentor_friend-1",
-      category: "Guidance & Doubt",
+      category: "Respect & Resentment",
       prompts: [
-        "If I gave you advice you completely disagreed with, what would you actually do?",
-        "Is there something you have pretended to agree with me about to avoid conflict?",
-        "What is the most uncertain you have ever felt after talking to me?"
+        "Have you ever resented the person who mentored you — for knowing more, having more, or being further ahead?",
+        "Is there advice your mentor gave you that you publicly agreed with but privately thought was wrong or outdated?",
+        "Do you look up to this person because you respect them — or because you want what they have?"
       ]
     },
     {
       id: "mentor_friend-2",
-      category: "Honesty & Image",
+      category: "Hidden Weakness",
       prompts: [
-        "What would be hardest to admit to someone who looks up to you?",
-        "Is there something about yourself you have hidden from me to manage how I see you?",
-        "When do you feel most unsure of yourself — even if you never show it?"
+        "What is the one failure or shame you have hidden from the person who guides you — because you could not bear their judgment?",
+        "Have you ever exaggerated your progress or success to maintain their image of you?",
+        "If your mentor saw the version of you that exists when no one is watching, would they still respect you?"
       ]
     },
     {
       id: "mentor_friend-3",
-      category: "Opportunity & Growth",
+      category: "The Power Gap",
       prompts: [
-        "If I opened a real door for you, what would your honest first instinct be?",
-        "Is there advice I gave you that you ignored — and later regretted?",
-        "What is something you want from this relationship that you have not asked for?"
+        "Do you think your mentor truly sees you as an equal — or will you always be below them in their mind?",
+        "Has your mentor ever made you feel small, and did you say anything about it?",
+        "If you surpassed your mentor in every way tomorrow, would you still want them in your life?"
       ]
     }
   ],
   just_close: [
     {
       id: "just_close-1",
-      category: "Clarity & Expectations",
+      category: "Tension & Desire",
       prompts: [
-        "What would help you understand what we actually are to each other?",
-        "Is there something you have been avoiding saying because you are not sure how I will react?",
-        "What do you actually expect from me — that you have never said?"
+        "Is there a physical or emotional attraction between you two that neither of you has ever named out loud?",
+        "Have you ever imagined what it would be like to be with this person — and then immediately buried the thought?",
+        "What would happen if one of you confessed something deeper — would it destroy what you have or finally make it real?"
       ]
     },
     {
       id: "just_close-2",
-      category: "Feelings & Uncertainty",
+      category: "Undefined & Dangerous",
       prompts: [
-        "What are you most likely to hide from me right now?",
-        "Is there a feeling you have had around me that you have kept to yourself?",
-        "What would make this connection feel more real or defined to you?"
+        "Are you keeping this relationship undefined on purpose — because defining it would force you to face something you are not ready for?",
+        "Have you ever felt possessive over this person when they got close to someone else — even though you have no right to?",
+        "What is the one thing you are most afraid this person will say to you?"
       ]
     },
     {
       id: "just_close-3",
-      category: "What Comes Next",
+      category: "The Real Question",
       prompts: [
-        "If this connection became something more, what would you actually want?",
-        "What would make you pull back — even if things are going well?",
-        "Is there something you want to say to me that you keep stopping yourself from saying?"
+        "If this person disappeared from your life tomorrow, what would hurt more — losing them, or realizing you never said what you wanted to?",
+        "Is there a version of this relationship that you fantasize about but would never initiate?",
+        "Do you think this person knows exactly how you feel — and is choosing to ignore it?"
       ]
     }
   ]

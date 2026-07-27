@@ -105,16 +105,15 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("join_room", async ({ roomCode, playerName }) => {
+  socket.on("join_room", async ({ roomCode, playerName, relationshipType }) => {
     try {
       const normalizedRoomCode = String(roomCode ?? "").trim();
-      const session = await joinSession(normalizedRoomCode, socket.id, { playerName });
+      const session = await joinSession(normalizedRoomCode, socket.id, { playerName, relationshipType });
       socket.join(session.roomCode);
       io.to(session.roomCode).emit("player_joined", { playersCount: 2 });
       socket.emit("joined_room", {
         roomCode: session.roomCode,
-        player: session.players.guest,
-        relationship: session.relationship
+        player: session.players.guest
       });
       emitRoundState(session, "game_started");
     } catch (error) {
@@ -172,8 +171,7 @@ io.on("connection", (socket) => {
         io.to(session.roomCode).emit("game_over", {
           finalMetrics: session.finalMetrics,
           roundHistory: history,
-          players: session.players,
-          relationship: session.relationship
+          players: session.players
         });
         return;
       }

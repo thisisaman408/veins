@@ -28,12 +28,13 @@ import { createSocket } from "./lib/socket.js";
 const serverUrl = import.meta.env.VITE_SERVER_URL ?? "http://localhost:4000";
 
 const relationships = [
-  { type: "romantic", label: "BF/GF or partners", description: "Emotionally close, but some answers can create friction fast." },
-  { type: "friends", label: "Friends", description: "Casual read based on habits, jokes, and patterns." },
-  { type: "close_friends", label: "Close friends", description: "You know each other very well, so wrong guesses hit harder." },
-  { type: "siblings", label: "Brother/sister/siblings", description: "Shared history, but a few things still feel hard to say." },
-  { type: "mentor_friend", label: "Mentor and friend", description: "Trust mixed with respect, image, and careful honesty." },
-  { type: "just_close", label: "Just close to each other", description: "The bond is real, but the boundaries are still unclear." }
+  { type: "romantic", label: "BF/GF or partners", description: "Emotionally and physically close. One wrong truth can start a fire." },
+  { type: "friends", label: "Friends", description: "You think you know them. Everyone hides something from the people they eat lunch with." },
+  { type: "best_friends", label: "Best friends", description: "You know their darkest side — or you think you do. Best friends keep the sharpest secrets." },
+  { type: "close_friends", label: "Close friends", description: "Close enough to hurt each other. Close enough to know exactly where to push." },
+  { type: "brother_sister", label: "Brother & Sister", description: "Blood ties, shared walls, unspoken boundaries. Some things siblings never say — until now." },
+  { type: "mentor_friend", label: "Mentor and friend", description: "Respect, hierarchy, and the things you hide from the person you look up to." },
+  { type: "just_close", label: "Just close to each other", description: "Undefined. Intense. You don't know where the line is — and that's the point." }
 ];
 
 function vibrate(pattern = 18) {
@@ -110,10 +111,10 @@ function App() {
     activeSocket.on("guess_submitted", acceptRoundState);
     activeSocket.on("round_reveal",   acceptRoundState);
 
-    activeSocket.on("game_over", ({ finalMetrics: metrics, roundHistory: history, players, relationship }) => {
+    activeSocket.on("game_over", ({ finalMetrics: metrics, roundHistory: history, players }) => {
       setFinalMetrics(metrics);
       setRoundHistory(history);
-      setResultsMeta({ players, relationship });
+      setResultsMeta({ players });
       setScreen("results");
       setIsSubmitting(false);
       vibrate([30, 40, 30]);
@@ -171,7 +172,7 @@ function App() {
     event.preventDefault();
     if (!roomReady) { setError("Enter a valid 6-digit room code."); return; }
     setError("");
-    socketRef.current?.emit("join_room", { roomCode: joinCode.trim(), playerName: playerName.trim() });
+    socketRef.current?.emit("join_room", { roomCode: joinCode.trim(), playerName: playerName.trim(), relationshipType });
   }
 
   function submitRoundPrompts(prompts) {
@@ -314,7 +315,7 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
       <Logo />
       <div className="mx-auto w-full max-w-4xl">
         <section className="glass-panel mb-4 rounded-xl p-4 sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr] items-start">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan">Identity</p>
               <TextInput value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="Your name" aria-label="Your name" />
@@ -322,6 +323,10 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Relationship Hint</p>
               <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-white/35">
+                <Shield size={12} className="shrink-0 text-emerald/60" aria-hidden="true" />
+                <span>Private — the other player <span className="text-white/55 font-medium">cannot see</span> what you chose</span>
+              </p>
             </div>
           </div>
         </section>
@@ -390,27 +395,42 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
 
 function RelationshipPicker({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
   const selected = relationships.find((r) => r.type === value) ?? relationships[0];
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [isOpen]);
 
   function choose(next) { onChange(next); setIsOpen(false); }
 
   return (
-    <div className="relative">
+    <div ref={ref} className="rounded-lg border border-emerald/25 bg-black/25 overflow-hidden">
+      {/* Trigger row */}
       <button
         type="button"
-        className="focus-ring touch-target flex w-full items-center justify-between gap-3 rounded-lg border border-emerald/25 bg-black/25 px-4 py-3 text-left text-white transition hover:border-emerald/50"
+        className="focus-ring flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-white transition hover:bg-white/5"
+        style={{ minHeight: 48 }}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((c) => !c)}
       >
         <span className="min-w-0">
           <span className="block text-sm font-semibold">{selected.label}</span>
-          <span className="mt-1 block truncate text-xs text-white/45">{selected.description}</span>
+          <span className="mt-0.5 block truncate text-xs text-white/45">{selected.description}</span>
         </span>
-        <ChevronDown aria-hidden="true" size={18} className={`shrink-0 text-emerald transition ${isOpen ? "rotate-180" : ""}`} />
+        <ChevronDown aria-hidden="true" size={18} className={`shrink-0 text-emerald transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
       </button>
+
+      {/* Inline options — no absolute positioning */}
       {isOpen && (
-        <div role="listbox" className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-xl border border-white/12 bg-[#101017] p-2 shadow-[0_18px_70px_rgba(0,0,0,0.55)]">
+        <div role="listbox" className="border-t border-white/10 bg-[#101017] p-1.5">
           {relationships.map((r) => {
             const sel = r.type === value;
             return (
@@ -419,13 +439,13 @@ function RelationshipPicker({ value, onChange }) {
                 type="button"
                 role="option"
                 aria-selected={sel}
-                className={`focus-ring flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition ${sel ? "bg-emerald/14 text-white" : "text-white/72 hover:bg-white/8 hover:text-white"}`}
+                className={`focus-ring flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition ${sel ? "bg-emerald/14 text-white" : "text-white/65 hover:bg-white/6 hover:text-white"}`}
                 onClick={() => choose(r.type)}
               >
-                <CheckCircle2 aria-hidden="true" size={17} className={`mt-0.5 shrink-0 ${sel ? "text-emerald" : "text-white/18"}`} />
+                <CheckCircle2 aria-hidden="true" size={16} className={`mt-0.5 shrink-0 ${sel ? "text-emerald" : "text-white/18"}`} />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold">{r.label}</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-white/45">{r.description}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-white/40">{r.description}</span>
                 </span>
               </button>
             );
@@ -451,7 +471,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, error, onSubmitPrompts
         <section className="glass-panel mx-auto grid w-full max-w-6xl gap-3 rounded-xl p-4 sm:grid-cols-3">
           <StatusChip label="You are"    value={isObserver ? "Asker / Observer" : "Target"} accent="cyan" />
           <StatusChip label="Target"     value={targetPlayer.name} accent="emerald" />
-          <StatusChip label="Connection" value={roundState.relationship.label} accent="violet" />
+          <StatusChip label="Your Signal" value={roundState.myRelationship?.label ?? "—"} accent="violet" />
         </section>
 
         {/* Phase routing */}
@@ -572,7 +592,7 @@ function QuestionComposer({ roundState, isSubmitting, onSubmit }) {
           </div>
         </div>
         <p className="mb-4 rounded-lg border border-white/10 bg-black/18 p-3 text-sm leading-6 text-white/58">
-          Based on <span className="text-white">{roundState.relationship.label}</span>: {roundState.relationship.description}
+          Based on your private signal: <span className="text-white">{roundState.myRelationship?.label}</span> — {roundState.myRelationship?.description}
         </p>
         <div className="grid gap-3">
           {suggestions.map((s) => (
@@ -908,7 +928,7 @@ function ResultsScreen({ finalMetrics, roundHistory, resultsMeta, onPlayAgain })
             {pct >= 80 ? "Mind Reader" : pct >= 50 ? "Sharp Observer" : pct >= 25 ? "Getting Warmer" : "Easily Fooled"}
           </h1>
           <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-white/55">
-            {resultsMeta?.players?.host?.name} & {resultsMeta?.players?.guest?.name} — {resultsMeta?.relationship?.label}
+            {resultsMeta?.players?.host?.name} & {resultsMeta?.players?.guest?.name}
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3">
@@ -1121,7 +1141,10 @@ function AdminSessionCard({ session }) {
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-white/42">Room {session.roomCode}</p>
           <h2 className="mt-1 text-xl font-semibold">{players.map((p) => p.name).join(" vs ") || "Unmatched room"}</h2>
-          <p className="mt-1 text-sm text-white/50">{session.relationship?.label} — {session.relationship?.description}</p>
+          <div className="mt-2 grid gap-1 text-sm text-white/50">
+            <p><span className="text-white/38">Host chose:</span> {session.hostRelationship?.label ?? "—"} <span className="text-white/25">({session.hostRelationship?.type})</span></p>
+            <p><span className="text-white/38">Guest chose:</span> {session.guestRelationship?.label ?? "—"} <span className="text-white/25">({session.guestRelationship?.type})</span></p>
+          </div>
           {metrics && <p className="mt-1 text-sm text-cyan">Won: {metrics.roundsWon} / Lost: {metrics.roundsLost}</p>}
         </div>
         <span className="rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-cyan">{session.status}</span>
