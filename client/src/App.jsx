@@ -337,10 +337,13 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Your Private Signal</p>
               <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-white/35">
-                <Shield size={12} className="shrink-0 text-emerald/60" aria-hidden="true" />
-                <span>Private — the other player <span className="text-white/55 font-medium">cannot see</span> what you chose</span>
-              </p>
+              <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-3 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)]">
+                <Shield size={13} className="shrink-0 text-emerald" aria-hidden="true" />
+                <p className="text-xs leading-5">
+                  <span className="font-semibold text-emerald">Only visible to you</span>
+                  <span className="text-white/55"> — the other player will never see your choice</span>
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -396,10 +399,13 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
               <>
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
                   <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
-                  <p className="mt-2 flex items-center gap-1.5 text-xs text-white/35">
-                    <Shield size={12} className="shrink-0 text-emerald/60" aria-hidden="true" />
-                    <span>Only you can see this. The other player has already chosen theirs privately.</span>
-                  </p>
+                  <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-3 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)]">
+                    <Shield size={13} className="shrink-0 text-emerald" aria-hidden="true" />
+                    <p className="text-xs leading-5">
+                      <span className="font-semibold text-emerald">Only visible to you</span>
+                      <span className="text-white/55"> — the other player has already chosen theirs privately</span>
+                    </p>
+                  </div>
                 </motion.div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
