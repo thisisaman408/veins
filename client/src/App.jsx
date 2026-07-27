@@ -268,7 +268,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Floating Chat */}
+      {/* Floating Chat — myName derived from roundState so it matches what server stored */}
       {inGame && (
         <ChatWidget
           open={chatOpen}
@@ -277,7 +277,7 @@ function App() {
           messages={chatMessages}
           unread={chatUnread}
           onSend={sendChat}
-          myName={playerName || "You"}
+          myName={roundState ? (roundState.players?.[roundState.mySlot]?.name ?? playerName) : playerName}
         />
       )}
     </main>
@@ -310,6 +310,20 @@ function TextInput(props) {
 
 /* ─── Lobby ──────────────────────────────────────────────────────────────────── */
 function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playersCount, error, playerName, setPlayerName, relationshipType, setRelationshipType, nameReady, onCreate, onJoin }) {
+  // Track whether joiner has explicitly picked their relationship
+  const [joinStep, setJoinStep] = useState("code"); // "code" | "signal"
+  const canProceedToSignal = roomReady && nameReady;
+
+  function handleJoin(event) {
+    event.preventDefault();
+    if (joinStep === "code") {
+      if (!canProceedToSignal) return;
+      setJoinStep("signal");
+    } else {
+      onJoin(event);
+    }
+  }
+
   return (
     <PageShell className="justify-center gap-6">
       <Logo />
@@ -321,7 +335,7 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
               <TextInput value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="Your name" aria-label="Your name" />
             </div>
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Relationship Hint</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Your Private Signal</p>
               <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
               <p className="mt-2 flex items-center gap-1.5 text-xs text-white/35">
                 <Shield size={12} className="shrink-0 text-emerald/60" aria-hidden="true" />
@@ -332,6 +346,7 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
         </section>
 
         <div className="grid gap-4 md:grid-cols-2">
+          {/* Create Room */}
           <motion.div whileHover={{ y: -2 }} className="glass-panel rounded-xl p-5 sm:p-6">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
@@ -347,27 +362,59 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
             </ActionButton>
           </motion.div>
 
-          <motion.form whileHover={{ y: -2 }} onSubmit={onJoin} className="glass-panel rounded-xl p-5 sm:p-6">
+          {/* Join Room */}
+          <motion.form whileHover={{ y: -2 }} onSubmit={handleJoin} className="glass-panel rounded-xl p-5 sm:p-6">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase text-emerald">Join</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Enter 6-Digit Code</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-white">
+                  {joinStep === "signal" ? "Choose Your Signal" : "Enter 6-Digit Code"}
+                </h2>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald/14 text-emerald">
                 <DoorOpen size={24} aria-hidden="true" />
               </div>
             </div>
-            <input
-              className="focus-ring touch-target mb-3 w-full rounded-lg border border-white/12 bg-black/25 px-4 text-center text-2xl font-semibold tracking-[0.28em] text-white placeholder:text-white/22"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              inputMode="numeric"
-              placeholder="000000"
-              aria-label="Room code"
-            />
-            <ActionButton icon={Users} className="w-full" disabled={!roomReady}>
-              Join Room
-            </ActionButton>
+
+            {joinStep === "code" ? (
+              <>
+                <input
+                  className="focus-ring touch-target mb-3 w-full rounded-lg border border-white/12 bg-black/25 px-4 text-center text-2xl font-semibold tracking-[0.28em] text-white placeholder:text-white/22"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  placeholder="000000"
+                  aria-label="Room code"
+                />
+                <ActionButton icon={Users} className="w-full" disabled={!canProceedToSignal}>
+                  Next — Choose Your Signal
+                </ActionButton>
+                {!nameReady && roomReady && <p className="mt-2 text-center text-xs text-white/40">Enter your name first</p>}
+              </>
+            ) : (
+              // Step 2: Joiner picks their private relationship
+              <>
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
+                  <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-white/35">
+                    <Shield size={12} className="shrink-0 text-emerald/60" aria-hidden="true" />
+                    <span>Only you can see this. The other player has already chosen theirs privately.</span>
+                  </p>
+                </motion.div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJoinStep("code")}
+                    className="focus-ring flex h-12 items-center justify-center rounded-lg border border-white/14 bg-white/6 px-4 text-sm text-white/60 hover:text-white transition"
+                  >
+                    ← Back
+                  </button>
+                  <ActionButton icon={Users} className="w-full">
+                    Join Room
+                  </ActionButton>
+                </div>
+              </>
+            )}
           </motion.form>
         </div>
       </div>
