@@ -12,13 +12,13 @@ import {
   clearRevealTimer,
   createSession,
   joinSession,
-  startRevealCountdown,
-  submitGuestGuess,
-  submitRoundQuestion,
-  submitTargetMove
+  submitRoundPrompts,
+  submitTargetAnswers,
+  submitObserverGuess,
+  submitTargetExplanation,
+  addChatMessage
 } from "./services/gameService.js";
 import GameSession from "./models/GameSession.js";
-import Question from "./models/Question.js";
 
 dotenv.config();
 
@@ -40,15 +40,6 @@ const io = new Server(server, {
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "veritas-server" });
-});
-
-app.get("/api/questions", async (_req, res, next) => {
-  try {
-    const questions = await Question.find().sort({ category: 1 });
-    res.json(questions);
-  } catch (error) {
-    next(error);
-  }
 });
 
 function requireAdmin(req, res, next) {
@@ -131,41 +122,42 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("submit_round_question", async ({ roomCode, question }) => {
+  // Observer submits 3 questions
+  socket.on("submit_round_prompts", async ({ roomCode, prompts }) => {
     try {
-      const session = await submitRoundQuestion({ roomCode, socketId: socket.id, question });
-      emitRoundState(session, "question_ready");
+      const session = await submitRoundPrompts({ roomCode, socketId: socket.id, prompts });
+      emitRoundState(session, "prompts_ready");
     } catch (error) {
       emitSocketError(socket, error);
     }
   });
 
-  socket.on("submit_target_move", async ({ roomCode, optionIndex, isLie }) => {
+  // Target submits 3 answers + which one is the lie
+  socket.on("submit_target_answers", async ({ roomCode, targetAnswers, lieIndex }) => {
     try {
-      const session = await submitTargetMove({
-        roomCode,
-        socketId: socket.id,
-        optionIndex: Number(optionIndex),
-        isLie
-      });
-      emitRoundState(session, "target_submitted");
+      const session = await submitTargetAnswers({ roomCode, socketId: socket.id, targetAnswers, lieIndex: Number(lieIndex) });
+      emitRoundState(session, "answers_ready");
     } catch (error) {
       emitSocketError(socket, error);
     }
   });
 
-  socket.on("submit_guest_guess", async ({ roomCode, guessedChoice, guessedIsLie }) => {
+  // Observer guesses which answer is the lie
+  socket.on("submit_observer_guess", async ({ roomCode, guessedLieIndex }) => {
     try {
-      const { session, question, round } = await submitGuestGuess({
-        roomCode,
-        socketId: socket.id,
-        guessedChoice: Number(guessedChoice),
-        guessedIsLie
-      });
+      const { session, round } = await submitObserverGuess({ roomCode, socketId: socket.id, guessedLieIndex: Number(guessedLieIndex) });
+      // emit updated state to both players — phase will be TARGET_EXPLANATION or REVEAL
+      emitRoundState(session, "guess_submitted");
+    } catch (error) {
+      emitSocketError(socket, error);
+    }
+  });
 
-      startRevealCountdown(io, session.roomCode, async () => {
-        io.to(session.roomCode).emit("reveal_round", buildRevealPayload(question, round));
-      });
+  // Target types their real explanation (only if observer guessed correctly)
+  socket.on("submit_target_explanation", async ({ roomCode, explanation }) => {
+    try {
+      const { session } = await submitTargetExplanation({ roomCode, socketId: socket.id, explanation });
+      emitRoundState(session, "round_reveal");
     } catch (error) {
       emitSocketError(socket, error);
     }
@@ -187,6 +179,18 @@ io.on("connection", (socket) => {
       }
 
       emitRoundState(session, "game_started");
+    } catch (error) {
+      emitSocketError(socket, error);
+    }
+  });
+
+  // Chat message
+  socket.on("send_chat", async ({ roomCode, text }) => {
+    try {
+      if (!text || !String(text).trim()) return;
+      const session = await addChatMessage({ roomCode, socketId: socket.id, text });
+      const lastMsg = session.chatMessages[session.chatMessages.length - 1];
+      io.to(roomCode).emit("chat_message", lastMsg);
     } catch (error) {
       emitSocketError(socket, error);
     }

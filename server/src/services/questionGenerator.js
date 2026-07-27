@@ -1,233 +1,184 @@
-const defaultSafetyScores = [9, 6, 3, 1];
+// Each suggestion is now a SET of 3 prompts for the observer to ask.
+// The observer can edit them or type their own.
 
 const templates = {
   romantic: [
     {
-      category: "Desire",
-      prompt: "What would make you quietly distance yourself in this relationship?",
-      options: [
-        "Feeling emotionally ignored for too long.",
-        "Repeated small lies that never get addressed.",
-        "Boredom that I do not know how to admit.",
-        "Finding attention somewhere else and liking it."
+      id: "romantic-1",
+      category: "Intimacy & Distance",
+      prompts: [
+        "What would make you quietly start pulling away in this relationship?",
+        "When do you feel the loneliest — even when we are together?",
+        "What is the one thing you want from me that you have never said directly?"
       ]
     },
     {
-      category: "Secrets",
-      prompt: "Which truth would be hardest for you to say directly to your partner?",
-      options: [
-        "I need more reassurance than I admit.",
-        "I sometimes compare this relationship to others.",
-        "I avoid conflict because I fear the answer.",
-        "I have imagined leaving without warning."
+      id: "romantic-2",
+      category: "Fears & Honesty",
+      prompts: [
+        "What truth about yourself would be hardest to say to a partner?",
+        "Is there something you have been avoiding because you are scared of the answer?",
+        "What is the one thing you are still unsure about in this relationship?"
       ]
     },
     {
-      category: "Future",
-      prompt: "If your partner wanted a serious commitment tomorrow, your honest instinct would be:",
-      options: [
-        "Say yes if the timing is practical.",
-        "Ask for more time and a clearer plan.",
-        "Feel trapped even if I love them.",
-        "Test the relationship by pulling away first."
+      id: "romantic-3",
+      category: "Future & Commitment",
+      prompts: [
+        "If I asked for a serious commitment tomorrow, what would your honest gut say?",
+        "What part of a future together excites you — and what quietly worries you?",
+        "If this relationship ended, what is the one thing you would regret not saying?"
       ]
     }
   ],
   friends: [
     {
-      category: "Conformity",
-      prompt: "If this friend made an embarrassing mistake in public, you would:",
-      options: [
-        "Help them recover without making it a big deal.",
-        "Joke lightly so the moment passes.",
-        "Pretend I did not notice.",
-        "Bring it up later because it was too funny."
+      id: "friends-1",
+      category: "Honesty & Loyalty",
+      prompts: [
+        "If I made an embarrassing mistake in public, what would you actually do?",
+        "Have you ever held something back from me to avoid conflict?",
+        "What is the one thing you think about me but never say?"
       ]
     },
     {
-      category: "Secrets",
-      prompt: "If this friend told you a secret that changed how you see them, you would:",
-      options: [
-        "Keep it and treat them the same.",
-        "Ask careful follow-up questions.",
-        "Need time before acting normal again.",
-        "Tell one trusted person to process it."
+      id: "friends-2",
+      category: "Drift & Connection",
+      prompts: [
+        "If this friendship started fading, would you say something — or let it go?",
+        "Is there something that changed between us that we have never talked about?",
+        "What would it take for you to consider us truly close, not just friends?"
       ]
     },
     {
-      category: "Future",
-      prompt: "If this friendship started fading, your most likely move is:",
-      options: [
-        "Send a direct check-in.",
-        "Wait and see if they notice too.",
-        "Accept it as natural drift.",
-        "Disappear first so it feels like my choice."
+      id: "friends-3",
+      category: "Secrets & Trust",
+      prompts: [
+        "If I told you something big about myself, would you keep it — or tell someone?",
+        "What is something you have shared with others that you never told me?",
+        "What part of your life would you hide even from a good friend?"
       ]
     }
   ],
   close_friends: [
     {
-      category: "Secrets",
-      prompt: "What part of your life would you still hide from a very close friend?",
-      options: [
-        "Private family issues.",
-        "Romantic doubts.",
-        "Money or career insecurity.",
-        "The version of me they would judge."
+      id: "close_friends-1",
+      category: "Hidden Things",
+      prompts: [
+        "What part of your life would you still hide from me, even as a close friend?",
+        "Is there a version of you that I have never seen — and do you want me to?",
+        "What have I got wrong about you that you have never corrected?"
       ]
     },
     {
-      category: "Conformity",
-      prompt: "If your close friend called you out honestly, your first reaction would be:",
-      options: [
-        "Listen because they usually know me.",
-        "Defend myself, then think about it later.",
-        "Make a joke to escape the moment.",
-        "Attack their weak point back."
+      id: "close_friends-2",
+      category: "Conflict & Feedback",
+      prompts: [
+        "If I called you out honestly right now, what would your first reaction be?",
+        "Have you ever been annoyed at me and said nothing? What was it?",
+        "What is something I do that bothers you but you have never mentioned?"
       ]
     },
     {
-      category: "Desire",
-      prompt: "What do you most want from this friendship right now?",
-      options: [
-        "Consistency and normal support.",
-        "More emotional honesty.",
-        "Space without guilt.",
-        "Proof they choose me over others."
+      id: "close_friends-3",
+      category: "What You Need",
+      prompts: [
+        "What do you want most from this friendship right now — and are you getting it?",
+        "Is there something you have needed from me that you have never asked for?",
+        "What would make you feel like I truly understand you?"
       ]
     }
   ],
   siblings: [
     {
-      category: "Secrets",
-      prompt: "What would you least want your sibling to know about you?",
-      options: [
-        "How much family pressure affects me.",
-        "A choice I know they would question.",
-        "How jealous I have felt before.",
-        "A boundary I pretend does not exist."
+      id: "siblings-1",
+      category: "Family & Secrets",
+      prompts: [
+        "What would you least want me to know about you — as a sibling?",
+        "Is there something from our family life you have never fully processed?",
+        "What is a decision you made that you know I would question?"
       ]
     },
     {
-      category: "Conformity",
-      prompt: "When family drama starts, your natural role is:",
-      options: [
-        "Keep peace and reduce damage.",
-        "Stay neutral until it affects me.",
-        "Say the uncomfortable truth.",
-        "Use chaos to finally say everything."
+      id: "siblings-2",
+      category: "Family Dynamics",
+      prompts: [
+        "When family drama starts, what is your real role — and what do you wish it was?",
+        "Is there something unfair in our family dynamic you have never said out loud?",
+        "What is the one thing you have always wanted to say to me but held back?"
       ]
     },
     {
-      category: "Future",
-      prompt: "If your sibling needed help during a crisis, you would:",
-      options: [
-        "Show up immediately.",
-        "Help, but set strict limits.",
-        "Offer advice before action.",
-        "Wait to see if someone else handles it."
+      id: "siblings-3",
+      category: "Crisis & Support",
+      prompts: [
+        "If I was in a serious crisis tomorrow, what would you actually do?",
+        "What would make you feel like you could really ask me for help?",
+        "Is there a time I let you down that we have never talked about?"
       ]
     }
   ],
   mentor_friend: [
     {
-      category: "Conformity",
-      prompt: "If your mentor-friend gave advice you disagreed with, you would:",
-      options: [
-        "Respectfully challenge it.",
-        "Thank them and decide privately.",
-        "Follow it because they know more.",
-        "Reject it sharply to prove independence."
+      id: "mentor_friend-1",
+      category: "Guidance & Doubt",
+      prompts: [
+        "If I gave you advice you completely disagreed with, what would you actually do?",
+        "Is there something you have pretended to agree with me about to avoid conflict?",
+        "What is the most uncertain you have ever felt after talking to me?"
       ]
     },
     {
-      category: "Secrets",
-      prompt: "What would be hardest to admit to someone who mentors you?",
-      options: [
-        "I am more uncertain than I look.",
-        "I ignored advice and it went badly.",
-        "I want approval more than I admit.",
-        "I resent being guided sometimes."
+      id: "mentor_friend-2",
+      category: "Honesty & Image",
+      prompts: [
+        "What would be hardest to admit to someone who looks up to you?",
+        "Is there something about yourself you have hidden from me to manage how I see you?",
+        "When do you feel most unsure of yourself — even if you never show it?"
       ]
     },
     {
-      category: "Future",
-      prompt: "If this person opened a door for you, your instinct would be:",
-      options: [
-        "Use it responsibly and stay grateful.",
-        "Ask what expectations come with it.",
-        "Wonder if I deserve it.",
-        "Take it and detach from the relationship."
+      id: "mentor_friend-3",
+      category: "Opportunity & Growth",
+      prompts: [
+        "If I opened a real door for you, what would your honest first instinct be?",
+        "Is there advice I gave you that you ignored — and later regretted?",
+        "What is something you want from this relationship that you have not asked for?"
       ]
     }
   ],
   just_close: [
     {
-      category: "Desire",
-      prompt: "What would clarify this bond for you the fastest?",
-      options: [
-        "A direct conversation about expectations.",
-        "More consistent behavior over time.",
-        "Seeing how they act when jealous.",
-        "Creating distance and watching their reaction."
+      id: "just_close-1",
+      category: "Clarity & Expectations",
+      prompts: [
+        "What would help you understand what we actually are to each other?",
+        "Is there something you have been avoiding saying because you are not sure how I will react?",
+        "What do you actually expect from me — that you have never said?"
       ]
     },
     {
-      category: "Secrets",
-      prompt: "What are you most likely to avoid saying to this person?",
-      options: [
-        "How much their attention affects me.",
-        "What I actually expect from them.",
-        "That I am unsure what we are.",
-        "That I am keeping other options open."
+      id: "just_close-2",
+      category: "Feelings & Uncertainty",
+      prompts: [
+        "What are you most likely to hide from me right now?",
+        "Is there a feeling you have had around me that you have kept to yourself?",
+        "What would make this connection feel more real or defined to you?"
       ]
     },
     {
-      category: "Future",
-      prompt: "If this connection became more serious, you would:",
-      options: [
-        "Move slowly and define it clearly.",
-        "Let it happen naturally.",
-        "Pull back to test the pressure.",
-        "Deny wanting it until they say it first."
+      id: "just_close-3",
+      category: "What Comes Next",
+      prompts: [
+        "If this connection became something more, what would you actually want?",
+        "What would make you pull back — even if things are going well?",
+        "Is there something you want to say to me that you keep stopping yourself from saying?"
       ]
     }
   ]
 };
 
-export function buildQuestionSuggestions(relationshipType, roundNumber) {
+export function buildQuestionSuggestions(relationshipType, _roundNumber) {
   const bank = templates[relationshipType] ?? templates.close_friends;
-  return bank.map((item, suggestionIndex) => ({
-    id: `${relationshipType}-${roundNumber}-${suggestionIndex}`,
-    category: item.category,
-    prompt: item.prompt,
-    options: item.options,
-    predictableIndexMap: item.options.map((_option, optionIndex) => ({
-      optionIndex,
-      safetyScore: defaultSafetyScores[optionIndex] ?? 5
-    })),
-    source: "generated"
-  }));
-}
-
-export function normalizeRoundQuestion(input) {
-  const prompt = String(input?.prompt ?? "").trim();
-  const options = (input?.options ?? [])
-    .map((option) => String(option ?? "").trim())
-    .filter(Boolean)
-    .slice(0, 4);
-
-  if (!prompt) throw new Error("Question prompt is required.");
-  if (options.length < 3) throw new Error("A round question needs at least three answer options.");
-
-  return {
-    category: String(input?.category ?? "Custom").trim() || "Custom",
-    prompt,
-    options,
-    predictableIndexMap: options.map((_option, optionIndex) => ({
-      optionIndex,
-      safetyScore: Number(input?.predictableIndexMap?.[optionIndex]?.safetyScore ?? defaultSafetyScores[optionIndex] ?? 5)
-    })),
-    source: ["generated", "generated_edited"].includes(input?.source) ? input.source : "custom"
-  };
+  return bank;
 }

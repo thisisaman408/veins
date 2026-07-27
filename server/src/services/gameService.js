@@ -1,39 +1,11 @@
 import GameSession from "../models/GameSession.js";
-import Question from "../models/Question.js";
-import { seedQuestions } from "../data/questions.js";
 import { getRelationshipProfile } from "../data/relationships.js";
-import {
-  buildQuestionSuggestions,
-  normalizeRoundQuestion
-} from "./questionGenerator.js";
-import {
-  calculateFinalMetrics,
-  calculateRoundScore,
-  normalizePredictability
-} from "./scoring.js";
+import { buildQuestionSuggestions } from "./questionGenerator.js";
 
 const revealTimers = new Map();
 
 export function generateRoomCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-export function serializeQuestion(question) {
-  if (!question) return null;
-  return {
-    id: question._id ? String(question._id) : undefined,
-    category: question.category,
-    prompt: question.prompt,
-    options: question.options,
-    predictableIndexMap: question.predictableIndexMap,
-    source: question.source ?? "seed"
-  };
-}
-
-export async function ensureQuestionBank() {
-  const existing = await Question.countDocuments();
-  if (existing > 0) return;
-  await Question.insertMany(seedQuestions);
 }
 
 function cleanName(name, fallback) {
@@ -95,6 +67,8 @@ function buildRound(session, roundNumber) {
     observerName: observer.name,
     questionAuthorSocketId: observer.socketId,
     questionAuthorName: observer.name,
+    prompts: [],
+    targetAnswers: [],
     auditLog: [
       {
         actorName: "System",
@@ -110,8 +84,6 @@ function buildRound(session, roundNumber) {
 }
 
 export async function createSession(hostSocketId, payload = {}) {
-  await ensureQuestionBank();
-
   let roomCode = generateRoomCode();
   let attempts = 0;
   while (await GameSession.exists({ roomCode, status: { $ne: "COMPLETED" } })) {
@@ -133,6 +105,8 @@ export async function createSession(hostSocketId, payload = {}) {
     players: { host },
     relationship,
     maxRounds: Number(payload.maxRounds) || 10,
+    finalMetrics: { roundsWon: 0, roundsLost: 0 },
+    chatMessages: [],
     auditLog: [
       {
         actorName: host.name,
@@ -191,7 +165,11 @@ export function buildRoundPayload(session, socketId) {
     players: session.players,
     mySlot,
     myRole,
-    currentQuestion: serializeQuestion(round.question),
+    prompts: round.prompts,
+    targetAnswers: round.targetAnswers,
+    lieIndex: round.lieIndex,
+    observerGuessedLieIndex: round.observerGuessedLieIndex,
+    targetExplanation: round.targetExplanation,
     questionSuggestions: buildQuestionSuggestions(session.relationship.type, session.currentRound),
     phase: round.phase,
     roundNumber: session.currentRound,
@@ -203,98 +181,111 @@ export function buildRoundPayload(session, socketId) {
     observerPlayer: {
       name: round.observerName,
       socketId: round.observerSocketId
-    }
+    },
+    chatMessages: session.chatMessages,
+    finalMetrics: session.finalMetrics
   };
 }
 
-export async function submitRoundQuestion({ roomCode, socketId, question }) {
+export async function submitRoundPrompts({ roomCode, socketId, prompts }) {
   const session = await GameSession.findOne({ roomCode });
   if (!session) throw new Error("Room not found.");
   if (session.status !== "IN_PROGRESS") throw new Error("Game is not in progress.");
 
   const round = session.roundsData[session.currentRound - 1];
   if (!round) throw new Error("Round not initialized.");
-  if (round.observerSocketId !== socketId) throw new Error("Only the observer/asker can set this round question.");
-  if (round.question) throw new Error("Question already submitted for this round.");
+  if (round.observerSocketId !== socketId) throw new Error("Only the observer/asker can set the prompts.");
+  if (round.prompts && round.prompts.length > 0) throw new Error("Prompts already submitted for this round.");
+  if (!Array.isArray(prompts) || prompts.length !== 3) throw new Error("Must submit exactly 3 prompts.");
 
   const actor = { socketId, name: round.observerName };
-  round.question = normalizeRoundQuestion(question);
+  round.prompts = prompts.map(p => String(p).trim());
   round.phase = "TARGET_ANSWER";
-  addRoundAudit(round, actor, "question_submitted", {
-    prompt: round.question.prompt,
-    options: round.question.options,
-    source: round.question.source
-  });
-  addAudit(session, actor, "question_submitted", {
-    roundNumber: session.currentRound,
-    prompt: round.question.prompt,
-    source: round.question.source
-  });
+  
+  addRoundAudit(round, actor, "prompts_submitted", { prompts: round.prompts });
+  addAudit(session, actor, "prompts_submitted", { roundNumber: session.currentRound, prompts: round.prompts });
+  
   await session.save();
   return session;
 }
 
-export async function submitTargetMove({ roomCode, socketId, optionIndex, isLie }) {
+export async function submitTargetAnswers({ roomCode, socketId, targetAnswers, lieIndex }) {
   const session = await GameSession.findOne({ roomCode });
   if (!session) throw new Error("Room not found.");
   if (session.status !== "IN_PROGRESS") throw new Error("Game is not in progress.");
 
   const round = session.roundsData[session.currentRound - 1];
   if (!round) throw new Error("Round not initialized.");
-  if (round.targetSocketId !== socketId) throw new Error("Only the current target can submit this move.");
-  if (!round.question) throw new Error("The observer must choose a question first.");
-  if (round.targetChoice !== undefined) throw new Error("Target move already submitted.");
-  if (optionIndex < 0 || optionIndex >= round.question.options.length) throw new Error("Invalid option.");
+  if (round.targetSocketId !== socketId) throw new Error("Only the current target can submit answers.");
+  if (!round.prompts || round.prompts.length === 0) throw new Error("The observer must choose questions first.");
+  if (round.targetAnswers && round.targetAnswers.length > 0) throw new Error("Target answers already submitted.");
+  if (!Array.isArray(targetAnswers) || targetAnswers.length !== 3) throw new Error("Must submit exactly 3 answers.");
+  if (lieIndex < 0 || lieIndex > 2) throw new Error("Invalid lie index.");
 
   const actor = { socketId, name: round.targetName };
-  round.targetChoice = optionIndex;
-  round.isLie = Boolean(isLie);
+  round.targetAnswers = targetAnswers.map(a => String(a).trim());
+  round.lieIndex = lieIndex;
   round.phase = "OBSERVER_GUESS";
-  addRoundAudit(round, actor, "target_answered", {
-    selectedOption: round.question.options[optionIndex],
-    optionIndex,
-    isLie: round.isLie
-  });
-  addAudit(session, actor, "target_answered", {
-    roundNumber: session.currentRound,
-    selectedOption: round.question.options[optionIndex],
-    optionIndex,
-    isLie: round.isLie
-  });
+  
+  addRoundAudit(round, actor, "target_answered", { targetAnswers: round.targetAnswers, lieIndex });
+  addAudit(session, actor, "target_answered", { roundNumber: session.currentRound, lieIndex });
+  
   await session.save();
   return session;
 }
 
-export async function submitGuestGuess({ roomCode, socketId, guessedChoice, guessedIsLie }) {
+export async function submitObserverGuess({ roomCode, socketId, guessedLieIndex }) {
   const session = await GameSession.findOne({ roomCode });
   if (!session) throw new Error("Room not found.");
   if (session.status !== "IN_PROGRESS") throw new Error("Game is not in progress.");
 
   const round = session.roundsData[session.currentRound - 1];
-  if (!round || round.targetChoice === undefined) throw new Error("Target has not locked in yet.");
+  if (!round || !round.targetAnswers || round.targetAnswers.length === 0) throw new Error("Target has not locked in yet.");
   if (round.observerSocketId !== socketId) throw new Error("Only the current observer can submit this guess.");
-  if (round.observerGuessedChoice !== undefined) throw new Error("Observer guess already submitted.");
-  if (guessedChoice < 0 || guessedChoice >= round.question.options.length) throw new Error("Invalid guess.");
+  if (round.observerGuessedLieIndex !== undefined) throw new Error("Observer guess already submitted.");
+  if (guessedLieIndex < 0 || guessedLieIndex > 2) throw new Error("Invalid guess.");
 
   const actor = { socketId, name: round.observerName };
-  round.observerGuessedChoice = guessedChoice;
-  round.observerGuessIsLie = Boolean(guessedIsLie);
-  round.predictabilityScore = calculateRoundScore(round.question, round.targetChoice, guessedChoice);
-  round.phase = "REVEAL";
-  addRoundAudit(round, actor, "observer_guessed", {
-    guessedOption: round.question.options[guessedChoice],
-    guessedChoice,
-    guessedIsLie: round.observerGuessIsLie
-  });
-  addAudit(session, actor, "observer_guessed", {
-    roundNumber: session.currentRound,
-    guessedOption: round.question.options[guessedChoice],
-    guessedChoice,
-    guessedIsLie: round.observerGuessIsLie
-  });
-  await session.save();
+  round.observerGuessedLieIndex = guessedLieIndex;
+  
+  const isCorrect = guessedLieIndex === round.lieIndex;
+  if (isCorrect) {
+    session.finalMetrics = session.finalMetrics || { roundsWon: 0, roundsLost: 0 };
+    session.finalMetrics.roundsWon += 1;
+    round.phase = "TARGET_EXPLANATION";
+  } else {
+    session.finalMetrics = session.finalMetrics || { roundsWon: 0, roundsLost: 0 };
+    session.finalMetrics.roundsLost += 1;
+    round.phase = "REVEAL"; // Skip explanation if they guess wrong
+  }
 
-  return { session, question: round.question, round };
+  addRoundAudit(round, actor, "observer_guessed", { guessedLieIndex, isCorrect });
+  addAudit(session, actor, "observer_guessed", { roundNumber: session.currentRound, guessedLieIndex, isCorrect });
+  
+  await session.save();
+  return { session, round };
+}
+
+export async function submitTargetExplanation({ roomCode, socketId, explanation }) {
+  const session = await GameSession.findOne({ roomCode });
+  if (!session) throw new Error("Room not found.");
+  if (session.status !== "IN_PROGRESS") throw new Error("Game is not in progress.");
+
+  const round = session.roundsData[session.currentRound - 1];
+  if (!round) throw new Error("Round not initialized.");
+  if (round.targetSocketId !== socketId) throw new Error("Only the current target can submit the explanation.");
+  if (round.phase !== "TARGET_EXPLANATION") throw new Error("Not in explanation phase.");
+  if (round.targetExplanation !== undefined) throw new Error("Explanation already submitted.");
+
+  const actor = { socketId, name: round.targetName };
+  round.targetExplanation = String(explanation).trim();
+  round.phase = "REVEAL";
+  
+  addRoundAudit(round, actor, "target_explained", { explanation: round.targetExplanation });
+  addAudit(session, actor, "target_explained", { roundNumber: session.currentRound });
+  
+  await session.save();
+  return { session, round };
 }
 
 export async function advanceRound(roomCode, socketId) {
@@ -305,7 +296,7 @@ export async function advanceRound(roomCode, socketId) {
   }
 
   const round = session.roundsData[session.currentRound - 1];
-  if (!round || round.observerGuessedChoice === undefined) {
+  if (!round || round.observerGuessedLieIndex === undefined) {
     throw new Error("Current round is not complete.");
   }
 
@@ -324,13 +315,7 @@ export async function advanceRound(roomCode, socketId) {
 }
 
 export async function completeSession(session) {
-  const questionsById = new Map(
-    session.roundsData
-      .filter((round) => round.question)
-      .map((round) => [String(round.questionId ?? round.question.prompt), round.question])
-  );
   session.status = "COMPLETED";
-  session.finalMetrics = calculateFinalMetrics(session.roundsData, questionsById);
   session.roundsData[session.currentRound - 1].phase = "COMPLETE";
   addAudit(session, { name: "System" }, "game_completed", {
     finalMetrics: session.finalMetrics
@@ -339,35 +324,17 @@ export async function completeSession(session) {
   return session;
 }
 
-export function buildRevealPayload(question, round) {
-  return {
-    question: serializeQuestion(question),
-    targetPlayer: {
-      name: round.targetName,
-      socketId: round.targetSocketId
-    },
-    observerPlayer: {
-      name: round.observerName,
-      socketId: round.observerSocketId
-    },
-    targetChoice: round.targetChoice,
-    isLie: round.isLie,
-    guestChoice: round.observerGuessedChoice,
-    guestIsLie: round.observerGuessIsLie,
-    roundScore: round.predictabilityScore,
-    normalizedRoundScore: normalizePredictability(round.predictabilityScore ?? 0),
-    choiceCorrect: round.targetChoice === round.observerGuessedChoice,
-    lieCorrect: round.isLie === round.observerGuessIsLie
-  };
+export function buildRevealPayload(session, round) {
+  return buildRoundPayload(session, session.hostSocketId); // Reusing standard state
 }
 
 export async function buildHistory(session) {
   const freshSession = await GameSession.findById(session._id);
   return freshSession.roundsData
-    .filter((round) => round.targetChoice !== undefined)
+    .filter((round) => round.targetAnswers && round.targetAnswers.length > 0)
     .map((round, index) => ({
       roundNumber: index + 1,
-      question: serializeQuestion(round.question),
+      prompts: round.prompts,
       targetPlayer: {
         name: round.targetName,
         socketId: round.targetSocketId
@@ -376,14 +343,11 @@ export async function buildHistory(session) {
         name: round.observerName,
         socketId: round.observerSocketId
       },
-      targetChoice: round.targetChoice,
-      targetAnswer: round.question.options[round.targetChoice],
-      isLie: round.isLie,
-      guestChoice: round.observerGuessedChoice,
-      guestAnswer: round.question.options[round.observerGuessedChoice],
-      guestIsLie: round.observerGuessIsLie,
-      roundScore: round.predictabilityScore,
-      normalizedRoundScore: normalizePredictability(round.predictabilityScore ?? 0)
+      targetAnswers: round.targetAnswers,
+      lieIndex: round.lieIndex,
+      observerGuessedLieIndex: round.observerGuessedLieIndex,
+      targetExplanation: round.targetExplanation,
+      isCorrect: round.lieIndex === round.observerGuessedLieIndex
     }));
 }
 
@@ -413,4 +377,19 @@ export function clearRevealTimer(roomCode) {
     clearInterval(timer);
     revealTimers.delete(roomCode);
   }
+}
+
+export async function addChatMessage({ roomCode, socketId, text }) {
+  const session = await GameSession.findOne({ roomCode });
+  if (!session) throw new Error("Room not found.");
+  
+  const senderName = session.hostSocketId === socketId ? session.players.host.name : session.players.guest.name;
+  session.chatMessages.push({ senderName, text: String(text).trim(), at: new Date() });
+  
+  if (session.chatMessages.length > 100) {
+    session.chatMessages.shift();
+  }
+  
+  await session.save();
+  return session;
 }

@@ -18,29 +18,12 @@ const relationshipSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const roundQuestionSchema = new mongoose.Schema(
-  {
-    category: { type: String, default: "Custom" },
-    prompt: { type: String, required: true },
-    options: [{ type: String, required: true }],
-    predictableIndexMap: [
-      {
-        optionIndex: Number,
-        safetyScore: Number
-      }
-    ],
-    source: { type: String, enum: ["generated", "generated_edited", "custom", "seed"], default: "generated" }
-  },
-  { _id: false }
-);
-
 const roundSchema = new mongoose.Schema(
   {
-    questionId: { type: mongoose.Schema.Types.ObjectId, ref: "Question" },
-    question: roundQuestionSchema,
+    prompts: [{ type: String }],
     phase: {
       type: String,
-      enum: ["QUESTION_SELECTION", "TARGET_ANSWER", "OBSERVER_GUESS", "REVEAL", "COMPLETE"],
+      enum: ["QUESTION_SELECTION", "TARGET_ANSWER", "OBSERVER_GUESS", "REVEAL", "TARGET_EXPLANATION", "COMPLETE"],
       default: "QUESTION_SELECTION"
     },
     targetSocketId: String,
@@ -49,11 +32,10 @@ const roundSchema = new mongoose.Schema(
     observerName: String,
     questionAuthorSocketId: String,
     questionAuthorName: String,
-    targetChoice: Number,
-    isLie: Boolean,
-    observerGuessIsLie: Boolean,
-    observerGuessedChoice: Number,
-    predictabilityScore: Number,
+    targetAnswers: [{ type: String }],
+    lieIndex: Number,
+    observerGuessedLieIndex: Number,
+    targetExplanation: String,
     auditLog: [
       {
         at: { type: Date, default: Date.now },
@@ -96,16 +78,16 @@ const gameSessionSchema = new mongoose.Schema(
         details: mongoose.Schema.Types.Mixed
       }
     ],
-    finalMetrics: {
-      totalPredictabilityIndex: Number,
-      archetypeLabel: String,
-      dimensions: {
-        conformity: Number,
-        predictability: Number,
-        riskTolerance: Number,
-        transparency: Number,
-        perceptibility: Number
+    chatMessages: [
+      {
+        senderName: String,
+        text: String,
+        at: { type: Date, default: Date.now }
       }
+    ],
+    finalMetrics: {
+      roundsWon: Number,
+      roundsLost: Number
     }
   },
   { timestamps: true }
