@@ -1,0 +1,19 @@
+{
+  "name": "veritas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dual-player realtime truth/lie perception game.",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev --workspace client",
+    "dev:server": "npm run dev --workspace server",
+    "build": "npm run build --workspace client",
+    "seed": "npm run seed --workspace server"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
