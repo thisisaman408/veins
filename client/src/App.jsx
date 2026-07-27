@@ -4,6 +4,7 @@ import {
   BarChart3,
   Brain,
   CheckCircle2,
+  ChevronDown,
   Copy,
   DoorOpen,
   Eye,
@@ -243,8 +244,8 @@ function App() {
 
   function joinRoom(event) {
     event.preventDefault();
-    if (!roomReady || !nameReady) {
-      setError("Enter your name and a valid room code.");
+    if (!roomReady) {
+      setError("Enter a valid 6-digit room code.");
       return;
     }
     setError("");
@@ -440,17 +441,7 @@ function LobbyScreen(props) {
             </div>
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Relationship Hint</p>
-              <select
-                className="focus-ring touch-target w-full rounded-lg border border-white/12 bg-black/25 px-4 text-white"
-                value={relationshipType}
-                onChange={(event) => setRelationshipType(event.target.value)}
-              >
-                {relationships.map((item) => (
-                  <option key={item.type} value={item.type}>
-                    {item.label} ({item.description})
-                  </option>
-                ))}
-              </select>
+              <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
             </div>
           </div>
         </section>
@@ -489,7 +480,7 @@ function LobbyScreen(props) {
               placeholder="000000"
               aria-label="Room code"
             />
-            <ActionButton icon={Users} className="w-full" disabled={!roomReady || !nameReady}>
+            <ActionButton icon={Users} className="w-full" disabled={!roomReady}>
               Join Room
             </ActionButton>
           </motion.form>
@@ -514,6 +505,71 @@ function LobbyScreen(props) {
 
       {error ? <p className="mx-auto max-w-xl text-center text-sm text-danger">{error}</p> : null}
     </PageShell>
+  );
+}
+
+function RelationshipPicker({ value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selected = relationships.find((item) => item.type === value) ?? relationships[0];
+
+  function chooseRelationship(nextValue) {
+    onChange(nextValue);
+    setIsOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="focus-ring touch-target flex w-full items-center justify-between gap-3 rounded-lg border border-emerald/25 bg-black/25 px-4 py-3 text-left text-white transition hover:border-emerald/50 hover:bg-emerald/8"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-white">{selected.label}</span>
+          <span className="mt-1 block truncate text-xs text-white/45">{selected.description}</span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          size={18}
+          className={`shrink-0 text-emerald transition ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {isOpen ? (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-xl border border-white/12 bg-[#101017] p-2 shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
+        >
+          {relationships.map((item) => {
+            const isSelected = item.type === value;
+            return (
+              <button
+                key={item.type}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`focus-ring flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition ${
+                  isSelected ? "bg-emerald/14 text-white" : "text-white/72 hover:bg-white/8 hover:text-white"
+                }`}
+                onClick={() => chooseRelationship(item.type)}
+              >
+                <CheckCircle2
+                  aria-hidden="true"
+                  size={17}
+                  className={`mt-0.5 shrink-0 ${isSelected ? "text-emerald" : "text-white/18"}`}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{item.label}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-white/45">{item.description}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
