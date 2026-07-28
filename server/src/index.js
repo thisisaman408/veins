@@ -209,8 +209,20 @@ io.on("connection", (socket) => {
 });
 
 async function start() {
-  await mongoose.connect(mongoUri);
+  await mongoose.connect(mongoUri, {
+    serverSelectionTimeoutMS: 10000,
+    socketTimeoutMS: 60000,
+    heartbeatFrequencyMS: 10000
+  });
   console.log("MongoDB connected.");
+
+  mongoose.connection.on("disconnected", () => {
+    console.warn("MongoDB disconnected — attempting to reconnect…");
+  });
+  mongoose.connection.on("reconnected", () => {
+    console.log("MongoDB reconnected.");
+  });
+
   server.listen(port, () => {
     console.log(`Veritas server listening on http://localhost:${port}`);
   });
