@@ -1145,21 +1145,115 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
 
 /* ─── Admin ──────────────────────────────────────────────────────────────────── */
 function AdminDashboard({ onExit }) {
-  const [adminKey, setAdminKey] = useState("");
+  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem("vt_admin_key") ?? "");
+  const [authed, setAuthed]     = useState(false);
   const [sessions, setSessions] = useState([]);
-  const [status, setStatus] = useState("");
+  const [status, setStatus]     = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loading, setLoading]   = useState(false);
 
-  async function loadSessions() {
-    setStatus("Loading...");
+  useEffect(() => {
+    if (adminKey) verifyAndLoad(adminKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function verifyAndLoad(key) {
+    setLoading(true);
+    setLoginError("");
     try {
-      const response = await fetch(`${serverUrl}/api/admin/sessions`, { headers: { "x-admin-key": adminKey } });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Admin request failed.");
+      const res  = await fetch(`${serverUrl}/api/admin/sessions`, { headers: { "x-admin-key": key } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Wrong key.");
+      sessionStorage.setItem("vt_admin_key", key);
+      setAdminKey(key);
       setSessions(data);
-      setStatus(`Loaded ${data.length} sessions.`);
-    } catch (error) {
-      setStatus(error.message);
+      setStatus(`${data.length} session${data.length !== 1 ? "s" : ""} loaded`);
+      setAuthed(true);
+    } catch (err) {
+      sessionStorage.removeItem("vt_admin_key");
+      setLoginError(err.message);
+      setAuthed(false);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  async function refresh() {
+    setStatus("Refreshing...");
+    try {
+      const res  = await fetch(`${serverUrl}/api/admin/sessions`, { headers: { "x-admin-key": adminKey } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed.");
+      setSessions(data);
+      setStatus(`${data.length} session${data.length !== 1 ? "s" : ""} loaded`);
+    } catch (err) { setStatus(err.message); }
+  }
+
+  function logout() {
+    sessionStorage.removeItem("vt_admin_key");
+    setAuthed(false);
+    setSessions([]);
+    setAdminKey("");
+    setStatus("");
+  }
+
+  if (!authed) {
+    return (
+      <main className="min-h-screen text-white">
+        <PageShell className="justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-auto w-full max-w-sm"
+          >
+            <div className="mb-8 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-violet/40 bg-violet/14 shadow-[0_0_36px_rgba(109,40,217,0.22)]">
+                <Shield size={28} className="text-violet" />
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet">Restricted</p>
+              <h1 className="mt-2 text-3xl font-bold">Admin Access</h1>
+              <p className="mt-2 text-sm text-white/45">Enter your admin key to view session logs</p>
+            </div>
+            <div className="glass-panel rounded-2xl p-6">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-white/55">
+                Admin Key
+              </label>
+              <TextInput
+                type="password"
+                value={adminKey}
+                onChange={(e) => { setAdminKey(e.target.value); setLoginError(""); }}
+                placeholder="Enter admin key..."
+                aria-label="Admin key"
+                onKeyDown={(e) => e.key === "Enter" && adminKey && verifyAndLoad(adminKey)}
+              />
+              {loginError && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-2 flex items-center gap-1.5 text-xs text-danger"
+                >
+                  <XCircle size={13} /> {loginError}
+                </motion.p>
+              )}
+              <ActionButton
+                icon={KeyRound}
+                className="mt-4 w-full"
+                disabled={!adminKey || loading}
+                onClick={() => verifyAndLoad(adminKey)}
+              >
+                {loading ? "Verifying..." : "Enter Dashboard"}
+              </ActionButton>
+            </div>
+            <button
+              onClick={onExit}
+              className="mt-4 w-full text-center text-sm text-white/35 hover:text-white/60 transition"
+            >
+              Back to game
+            </button>
+          </motion.div>
+        </PageShell>
+      </main>
+    );
   }
 
   return (
@@ -1167,18 +1261,20 @@ function AdminDashboard({ onExit }) {
       <PageShell className="gap-5 py-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan">Admin Only</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet">Admin Dashboard</p>
             <h1 className="mt-2 text-3xl font-semibold">Veritas Session Logs</h1>
+            {status && <p className="mt-1 text-xs text-white/40">{status}</p>}
           </div>
-          <ActionButton icon={Shield} variant="secondary" onClick={onExit}>Player App</ActionButton>
+          <div className="flex flex-wrap gap-2">
+            <ActionButton icon={RotateCcw} variant="secondary" onClick={refresh}>Refresh</ActionButton>
+            <ActionButton icon={Shield}    variant="secondary" onClick={logout}>Logout</ActionButton>
+            <ActionButton icon={X}         variant="secondary" onClick={onExit}>Player App</ActionButton>
+          </div>
         </div>
-        <section className="glass-panel grid gap-3 rounded-xl p-4 sm:grid-cols-[1fr_auto]">
-          <TextInput type="password" value={adminKey} onChange={(e) => setAdminKey(e.target.value)} placeholder="ADMIN_KEY" aria-label="Admin key" />
-          <ActionButton icon={KeyRound} onClick={loadSessions} disabled={!adminKey}>Load Logs</ActionButton>
-        </section>
-        {status ? <p className="text-sm text-white/55">{status}</p> : null}
         <div className="grid gap-4">
-          {sessions.map((session) => <AdminSessionCard key={session._id} session={session} />)}
+          {sessions.length === 0
+            ? <p className="py-12 text-center text-sm text-white/40">No sessions found.</p>
+            : sessions.map((session) => <AdminSessionCard key={session._id} session={session} />)}
         </div>
       </PageShell>
     </main>
