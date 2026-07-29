@@ -292,7 +292,7 @@ function PageShell({ children, className = "" }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.28, ease: "easeOut" }}
-      className={`mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-5 sm:px-6 ${className}`}
+      className={`mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 py-4 sm:px-6 overflow-x-hidden ${className}`}
     >
       {children}
     </motion.section>
@@ -302,7 +302,7 @@ function PageShell({ children, className = "" }) {
 function TextInput(props) {
   return (
     <input
-      className="focus-ring touch-target w-full rounded-lg border border-white/12 bg-black/25 px-4 text-white placeholder:text-white/30"
+      className="focus-ring touch-target w-full max-w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-white placeholder:text-white/30 text-base sm:px-4 sm:text-sm"
       {...props}
     />
   );
@@ -325,39 +325,39 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
   }
 
   return (
-    <PageShell className="justify-center gap-6">
+    <PageShell className="justify-center gap-4 sm:gap-6">
       <Logo />
-      <div className="mx-auto w-full max-w-4xl">
-        <section className="glass-panel mb-4 rounded-xl p-4 sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr] items-start">
-            <div>
+      <div className="mx-auto w-full max-w-4xl min-w-0">
+        <section className="glass-panel mb-4 rounded-xl p-3.5 sm:p-5 w-full min-w-0">
+          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr] items-start w-full min-w-0">
+            <div className="w-full min-w-0">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan">Identity</p>
               <TextInput value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="Your name" aria-label="Your name" />
             </div>
-            <div>
+            <div className="w-full min-w-0">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald">Your Private Signal</p>
               <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
-              <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-3 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)]">
-                <Shield size={13} className="shrink-0 text-emerald" aria-hidden="true" />
-                <p className="text-xs leading-5">
-                  <span className="font-semibold text-emerald">Only visible to you</span>
-                  <span className="text-white/55"> — the other player will never see your choice</span>
+              <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-2.5 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)] min-w-0">
+                <Shield size={14} className="shrink-0 text-emerald" aria-hidden="true" />
+                <p className="text-xs leading-4 min-w-0 break-words">
+                  <span className="font-semibold text-emerald inline-block mr-1">Only visible to you</span>
+                  <span className="text-white/55">— the other player will never see your choice</span>
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 w-full min-w-0">
           {/* Create Room */}
-          <motion.div whileHover={{ y: -2 }} className="glass-panel rounded-xl p-5 sm:p-6">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
+          <motion.div whileHover={{ y: -2 }} className="glass-panel rounded-xl p-4 sm:p-6 w-full min-w-0">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase text-cyan">Start</p>
-                <h1 className="mt-2 text-2xl font-semibold text-white">Create Private Room</h1>
+                <h1 className="mt-1 text-xl sm:text-2xl font-semibold text-white truncate">Create Private Room</h1>
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-cyan/14 text-cyan">
-                <Plus size={24} aria-hidden="true" />
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-lg bg-cyan/14 text-cyan">
+                <Plus size={22} aria-hidden="true" />
               </div>
             </div>
             <ActionButton icon={LockKeyhole} className="w-full" onClick={onCreate} disabled={!nameReady}>
@@ -366,30 +366,30 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
           </motion.div>
 
           {/* Join Room */}
-          <motion.form whileHover={{ y: -2 }} onSubmit={handleJoin} className="glass-panel rounded-xl p-5 sm:p-6">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
+          <motion.form whileHover={{ y: -2 }} onSubmit={handleJoin} className="glass-panel rounded-xl p-4 sm:p-6 w-full min-w-0">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase text-emerald">Join</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">
+                <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white truncate">
                   {joinStep === "signal" ? "Choose Your Signal" : "Enter 6-Digit Code"}
                 </h2>
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald/14 text-emerald">
-                <DoorOpen size={24} aria-hidden="true" />
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-lg bg-emerald/14 text-emerald">
+                <DoorOpen size={22} aria-hidden="true" />
               </div>
             </div>
 
             {joinStep === "code" ? (
               <>
                 <input
-                  className="focus-ring touch-target mb-3 w-full rounded-lg border border-white/12 bg-black/25 px-4 text-center text-2xl font-semibold tracking-[0.28em] text-white placeholder:text-white/22"
+                  className="focus-ring touch-target mb-3 w-full max-w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-center text-xl sm:text-2xl font-semibold tracking-[0.2em] sm:tracking-[0.28em] text-white placeholder:text-white/22"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   inputMode="numeric"
                   placeholder="000000"
                   aria-label="Room code"
                 />
-                <ActionButton icon={Users} className="w-full" disabled={!canProceedToSignal}>
+                <ActionButton icon={Users} className="w-full text-xs sm:text-sm" disabled={!canProceedToSignal}>
                   Next — Choose Your Signal
                 </ActionButton>
                 {!nameReady && roomReady && <p className="mt-2 text-center text-xs text-white/40">Enter your name first</p>}
@@ -397,13 +397,13 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
             ) : (
               // Step 2: Joiner picks their private relationship
               <>
-                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-3 w-full min-w-0">
                   <RelationshipPicker value={relationshipType} onChange={setRelationshipType} />
-                  <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-3 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)]">
-                    <Shield size={13} className="shrink-0 text-emerald" aria-hidden="true" />
-                    <p className="text-xs leading-5">
-                      <span className="font-semibold text-emerald">Only visible to you</span>
-                      <span className="text-white/55"> — the other player has already chosen theirs privately</span>
+                  <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-2.5 py-2 shadow-[0_0_18px_rgba(16,185,129,0.12)] min-w-0">
+                    <Shield size={14} className="shrink-0 text-emerald" aria-hidden="true" />
+                    <p className="text-xs leading-4 min-w-0 break-words">
+                      <span className="font-semibold text-emerald inline-block mr-1">Only visible to you</span>
+                      <span className="text-white/55">— the other player has already chosen theirs privately</span>
                     </p>
                   </div>
                 </motion.div>
@@ -411,11 +411,11 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
                   <button
                     type="button"
                     onClick={() => setJoinStep("code")}
-                    className="focus-ring flex h-12 items-center justify-center rounded-lg border border-white/14 bg-white/6 px-4 text-sm text-white/60 hover:text-white transition"
+                    className="focus-ring flex h-12 items-center justify-center rounded-lg border border-white/14 bg-white/6 px-3 text-xs sm:text-sm text-white/60 hover:text-white transition"
                   >
                     ← Back
                   </button>
-                  <ActionButton icon={Users} className="w-full">
+                  <ActionButton icon={Users} className="w-full text-xs sm:text-sm">
                     Join Room
                   </ActionButton>
                 </div>
@@ -429,19 +429,19 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass-panel mx-auto flex w-full max-w-md flex-col items-center rounded-xl p-6 text-center"
+          className="glass-panel mx-auto flex w-full max-w-md flex-col items-center rounded-xl p-5 sm:p-6 text-center"
         >
-          <div className="relative mb-5 flex h-24 w-24 items-center justify-center rounded-full border border-cyan/30">
+          <div className="relative mb-4 flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full border border-cyan/30">
             <span className="absolute h-full w-full animate-ping rounded-full border border-cyan/40" />
-            <Eye className="text-cyan" size={32} aria-hidden="true" />
+            <Eye className="text-cyan" size={28} aria-hidden="true" />
           </div>
-          <p className="text-sm uppercase tracking-[0.24em] text-white/45">Room {roomCode}</p>
-          <h2 className="mt-2 text-xl font-semibold">Waiting for Player 2</h2>
-          <p className="mt-2 text-sm text-white/55">{playersCount}/2 linked</p>
+          <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-white/45">Room {roomCode}</p>
+          <h2 className="mt-1 text-lg sm:text-xl font-semibold">Waiting for Player 2</h2>
+          <p className="mt-1 text-xs sm:text-sm text-white/55">{playersCount}/2 linked</p>
         </motion.div>
       )}
 
-      {error ? <p className="mx-auto max-w-xl text-center text-sm text-danger">{error}</p> : null}
+      {error ? <p className="mx-auto max-w-xl text-center text-xs sm:text-sm text-danger px-2">{error}</p> : null}
     </PageShell>
   );
 }
@@ -464,26 +464,26 @@ function RelationshipPicker({ value, onChange }) {
   function choose(next) { onChange(next); setIsOpen(false); }
 
   return (
-    <div ref={ref} className="rounded-lg border border-emerald/25 bg-black/25 overflow-hidden">
+    <div ref={ref} className="rounded-lg border border-emerald/25 bg-black/25 overflow-hidden w-full min-w-0">
       {/* Trigger row */}
       <button
         type="button"
-        className="focus-ring flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-white transition hover:bg-white/5"
+        className="focus-ring flex w-full items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3 text-left text-white transition hover:bg-white/5"
         style={{ minHeight: 48 }}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((c) => !c)}
       >
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold">{selected.label}</span>
-          <span className="mt-0.5 block truncate text-xs text-white/45">{selected.description}</span>
+        <span className="min-w-0 overflow-hidden">
+          <span className="block text-xs sm:text-sm font-semibold truncate">{selected.label}</span>
+          <span className="mt-0.5 block truncate text-[11px] sm:text-xs text-white/45">{selected.description}</span>
         </span>
         <ChevronDown aria-hidden="true" size={18} className={`shrink-0 text-emerald transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
       {/* Inline options — no absolute positioning */}
       {isOpen && (
-        <div role="listbox" className="border-t border-white/10 bg-[#101017] p-1.5">
+        <div role="listbox" className="border-t border-white/10 bg-[#101017] p-1.5 max-h-60 overflow-y-auto custom-scrollbar">
           {relationships.map((r) => {
             const sel = r.type === value;
             return (
@@ -492,13 +492,13 @@ function RelationshipPicker({ value, onChange }) {
                 type="button"
                 role="option"
                 aria-selected={sel}
-                className={`focus-ring flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition ${sel ? "bg-emerald/14 text-white" : "text-white/65 hover:bg-white/6 hover:text-white"}`}
+                className={`focus-ring flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${sel ? "bg-emerald/14 text-white" : "text-white/65 hover:bg-white/6 hover:text-white"}`}
                 onClick={() => choose(r.type)}
               >
                 <CheckCircle2 aria-hidden="true" size={16} className={`mt-0.5 shrink-0 ${sel ? "text-emerald" : "text-white/18"}`} />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold">{r.label}</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-white/40">{r.description}</span>
+                  <span className="block text-xs sm:text-sm font-semibold">{r.label}</span>
+                  <span className="mt-0.5 block text-[11px] sm:text-xs leading-4 text-white/40">{r.description}</span>
                 </span>
               </button>
             );
@@ -1058,14 +1058,14 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
   }
 
   return (
-    <div className="fixed bottom-6 right-5 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-4 right-3 sm:bottom-6 sm:right-5 z-50 flex flex-col items-end gap-3 max-w-full">
       {open && (
         <motion.div
           initial={{ opacity: 0, scale: 0.92, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.92, y: 12 }}
-          className="glass-panel flex w-80 flex-col rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
-          style={{ maxHeight: "420px" }}
+          className="glass-panel flex w-[calc(100vw-1.5rem)] max-w-xs sm:w-80 flex-col rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
+          style={{ maxHeight: "70vh" }}
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
@@ -1079,7 +1079,7 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2" style={{ minHeight: "200px", maxHeight: "280px" }}>
+          <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-2" style={{ minHeight: "180px", maxHeight: "280px" }}>
             {messages.length === 0 && (
               <p className="text-center text-xs text-white/35 mt-8">No messages yet. Say something!</p>
             )}
@@ -1093,7 +1093,7 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
                   className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                 >
                   {!isMe && <p className="mb-0.5 text-xs text-white/40">{msg.senderName}</p>}
-                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${isMe ? "bg-cyan text-jet font-medium" : "bg-white/10 text-white"}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words ${isMe ? "bg-cyan text-jet font-medium" : "bg-white/10 text-white"}`}>
                     {msg.text}
                   </div>
                 </motion.div>
@@ -1105,7 +1105,7 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
           {/* Input */}
           <form onSubmit={handleSend} className="flex gap-2 border-t border-white/10 px-3 py-2.5">
             <input
-              className="focus-ring flex-1 rounded-lg border border-white/12 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30"
+              className="focus-ring flex-1 rounded-lg border border-white/12 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 min-w-0"
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Type a message..."
@@ -1114,7 +1114,7 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
             <button
               type="submit"
               disabled={!text.trim()}
-              className="focus-ring flex h-10 w-10 items-center justify-center rounded-lg bg-cyan text-jet transition hover:bg-cyan/90 disabled:opacity-40"
+              className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan text-jet transition hover:bg-cyan/90 disabled:opacity-40"
             >
               <Send size={16} aria-hidden="true" />
             </button>
@@ -1128,10 +1128,10 @@ function ChatWidget({ open, onOpen, onClose, messages, unread, onSend, myName })
           type="button"
           whileTap={{ scale: 0.94 }}
           onClick={onOpen}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full bg-cyan text-jet shadow-glow transition hover:bg-cyan/90"
+          className="relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-cyan text-jet shadow-glow transition hover:bg-cyan/90"
           aria-label="Open chat"
         >
-          <MessageCircle size={24} aria-hidden="true" />
+          <MessageCircle size={22} aria-hidden="true" />
           {unread > 0 && (
             <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
               {unread > 9 ? "9+" : unread}
