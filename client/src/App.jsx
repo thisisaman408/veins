@@ -1329,6 +1329,24 @@ function AdminSessionCard({ session }) {
             </div>
           </details>
         ))}
+        {session.chatMessages && session.chatMessages.length > 0 && (
+          <details className="rounded-lg border border-white/10 bg-black/18 p-3 mt-2">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              Chat History ({session.chatMessages.length} messages)
+            </summary>
+            <div className="mt-3 grid gap-2 text-sm text-white/66 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+              {session.chatMessages.map((msg, i) => (
+                <div key={i} className="rounded-lg bg-white/[0.03] p-2">
+                  <p className="text-xs text-white/38 mb-1 flex justify-between">
+                    <span>{msg.senderName}</span>
+                    <span>{new Date(msg.at).toLocaleTimeString()}</span>
+                  </p>
+                  <p className="text-white/80">{msg.text}</p>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </section>
   );
