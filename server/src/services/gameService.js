@@ -188,7 +188,7 @@ export function buildRoundPayload(session, socketId) {
     lieIndex: round.lieIndex,
     observerGuessedLieIndex: round.observerGuessedLieIndex,
     targetExplanation: round.targetExplanation,
-    questionSuggestions: buildQuestionSuggestions(observerRelationship?.type ?? "close_friends", session.currentRound),
+    questionSuggestions: buildQuestionSuggestions(observerRelationship?.type ?? "close_friends", round.targetName),
     phase: round.phase,
     roundNumber: session.currentRound,
     maxRounds: session.maxRounds,
