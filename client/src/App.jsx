@@ -1282,71 +1282,160 @@ function AdminDashboard({ onExit }) {
 }
 
 function AdminSessionCard({ session }) {
-  const players = [session.players?.host, session.players?.guest].filter(Boolean);
+  const host  = session.players?.host;
+  const guest = session.players?.guest;
   const metrics = session.finalMetrics;
+
   return (
-    <section className="glass-panel rounded-xl p-4 sm:p-5">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+    <section className="glass-panel rounded-2xl overflow-hidden">
+
+      {/* ── Header ── */}
+      <div className="px-5 py-4 border-b border-white/8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-white/42">Room {session.roomCode}</p>
-          <h2 className="mt-1 text-xl font-semibold">{players.map((p) => p.name).join(" vs ") || "Unmatched room"}</h2>
-          <div className="mt-2 grid gap-1 text-sm text-white/50">
-            <p><span className="text-white/38">Host chose:</span> {session.hostRelationship?.label ?? "—"} <span className="text-white/25">({session.hostRelationship?.type})</span></p>
-            <p><span className="text-white/38">Guest chose:</span> {session.guestRelationship?.label ?? "—"} <span className="text-white/25">({session.guestRelationship?.type})</span></p>
+          <p className="text-xs uppercase tracking-[0.18em] text-white/38 mb-1">
+            Room {session.roomCode} · {new Date(session.createdAt).toLocaleString()}
+          </p>
+          <h2 className="text-2xl font-bold">
+            <span className="text-violet">{host?.name ?? "?"}</span>
+            <span className="text-white/30 font-normal mx-2">vs</span>
+            <span className="text-cyan">{guest?.name ?? "?"}</span>
+          </h2>
+          {/* Relationship tags */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <div className="rounded-xl border border-violet/30 bg-violet/10 px-3 py-1.5 text-xs">
+              <span className="text-white/40">{host?.name ?? "Host"} (host) sees this as: </span>
+              <span className="text-violet font-semibold">{session.hostRelationship?.label ?? "—"}</span>
+            </div>
+            <div className="rounded-xl border border-cyan/25 bg-cyan/8 px-3 py-1.5 text-xs">
+              <span className="text-white/40">{guest?.name ?? "Guest"} (guest) sees this as: </span>
+              <span className="text-cyan font-semibold">{session.guestRelationship?.label ?? "—"}</span>
+            </div>
           </div>
-          {metrics && <p className="mt-1 text-sm text-cyan">Won: {metrics.roundsWon} / Lost: {metrics.roundsLost}</p>}
+          {metrics && (
+            <p className="mt-2 text-xs text-white/45">
+              Observer caught the lie in <span className="text-cyan font-bold">{metrics.roundsWon}</span> round(s),
+              missed in <span className="text-danger font-bold">{metrics.roundsLost}</span>
+            </p>
+          )}
         </div>
-        <span className="rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-cyan">{session.status}</span>
+        <span className={`self-start shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold tracking-wider border ${
+          session.status === "COMPLETED"   ? "border-cyan/30 bg-cyan/10 text-cyan" :
+          session.status === "IN_PROGRESS" ? "border-amber-400/30 bg-amber-400/8 text-amber-400" :
+          "border-white/10 bg-white/5 text-white/50"
+        }`}>{session.status}</span>
       </div>
-      <div className="grid gap-3">
-        {session.roundsData?.map((round, index) => (
-          <details key={`${session._id}-${index}`} className="rounded-lg border border-white/10 bg-black/18 p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
-              Round {index + 1}: {round.questionAuthorName} asked {round.targetName} — <span className={round.lieIndex === round.observerGuessedLieIndex ? "text-cyan" : "text-danger"}>{round.lieIndex === round.observerGuessedLieIndex ? "Caught" : "Missed"}</span>
-            </summary>
-            <div className="mt-3 grid gap-2 text-sm text-white/66">
-              {(round.prompts ?? []).map((p, i) => (
-                <div key={i} className={`rounded-lg p-3 ${i === round.lieIndex ? "border border-danger/30 bg-danger/6" : "bg-white/[0.03]"}`}>
-                  <p className="text-xs text-white/38 mb-1">Q{i+1} — {i === round.lieIndex ? "LIE" : "truth"} — Guessed: {round.observerGuessedLieIndex === i ? "yes" : "no"}</p>
-                  <p className="text-white/55 mb-1">{p}</p>
-                  <p className="font-semibold text-white">{round.targetAnswers?.[i] ?? "–"}</p>
+
+      {/* ── Body: Rounds left, Chat right ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px]">
+
+        {/* Rounds */}
+        <div className="p-5 border-r border-white/6 flex flex-col gap-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/35">Round-by-round</p>
+
+          {(!session.roundsData || session.roundsData.length === 0) && (
+            <p className="text-sm text-white/30 italic">No rounds yet.</p>
+          )}
+
+          {session.roundsData?.map((round, index) => {
+            const caught     = round.lieIndex === round.observerGuessedLieIndex;
+            const guessedIdx = round.observerGuessedLieIndex;
+            return (
+              <div key={index} className={`rounded-xl border p-4 ${caught ? "border-cyan/20 bg-cyan/4" : "border-danger/20 bg-danger/4"}`}>
+
+                {/* Narrative header */}
+                <div className="flex items-start justify-between gap-2 mb-4">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-white/35 mb-1">Round {index + 1}</p>
+                    <p className="text-sm font-semibold leading-snug">
+                      <span className="text-violet">{round.questionAuthorName}</span>
+                      <span className="text-white/45"> chose the questions · </span>
+                      <span className="text-amber-400">{round.targetName}</span>
+                      <span className="text-white/45"> had to answer</span>
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ${caught ? "bg-cyan/15 text-cyan" : "bg-danger/15 text-danger"}`}>
+                    {caught ? "✓ Caught" : "✗ Missed"}
+                  </span>
                 </div>
-              ))}
-              {round.targetExplanation && (
-                <div className="rounded-lg border border-amber-400/25 bg-amber-400/5 p-3">
-                  <p className="text-xs text-amber-400 mb-1">Real Answer</p>
-                  <p>{round.targetExplanation}</p>
+
+                {/* Q&A blocks */}
+                <div className="grid gap-2 mb-3">
+                  {(round.prompts ?? []).map((prompt, i) => {
+                    const isLie      = i === round.lieIndex;
+                    const wasGuessed = guessedIdx === i;
+                    return (
+                      <div key={i} className={`rounded-lg p-3 ${isLie ? "border border-danger/35 bg-danger/8" : "bg-white/[0.04]"}`}>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <span className="text-[11px] font-bold text-white/40">Q{i + 1}</span>
+                          {isLie && (
+                            <span className="rounded text-[10px] font-bold px-1.5 py-0.5 bg-danger/20 text-danger">← THE LIE</span>
+                          )}
+                          {wasGuessed && (
+                            <span className="rounded text-[10px] font-bold px-1.5 py-0.5 bg-amber-400/15 text-amber-400">
+                              {round.questionAuthorName} guessed this
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-white/40 leading-snug mb-2">{prompt}</p>
+                        <p className="text-sm font-semibold text-white">
+                          "{round.targetAnswers?.[i] ?? "—"}"
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              <div className="rounded-lg border border-white/8 bg-white/[0.035] p-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan">Audit Log</p>
-                {(round.auditLog ?? []).map((item, ii) => (
-                  <p key={ii} className="mb-1 text-xs leading-5 text-white/55">
-                    {new Date(item.at).toLocaleString()} — {item.actorName ?? "System"} — {item.action}
+
+                {/* Verdict narrative */}
+                <div className="rounded-lg bg-black/25 border border-white/6 p-3 text-xs text-white/55 leading-relaxed">
+                  <p>
+                    The lie was <span className="text-danger font-semibold">Q{(round.lieIndex ?? 0) + 1}</span>.{" "}
+                    <span className="text-violet font-semibold">{round.questionAuthorName}</span>{" "}
+                    {guessedIdx != null
+                      ? <>guessed <span className="text-white font-semibold">Q{guessedIdx + 1}</span> — <span className={caught ? "text-cyan font-bold" : "text-danger font-bold"}>{caught ? "correct!" : "wrong."}</span></>
+                      : <span className="text-white/30">did not submit a guess.</span>
+                    }
                   </p>
-                ))}
+                  {round.targetExplanation && (
+                    <p className="mt-2 pt-2 border-t border-white/6">
+                      <span className="text-amber-400 font-semibold">{round.targetName}</span> explained the lie:{" "}
+                      <em className="text-white/70">"{round.targetExplanation}"</em>
+                    </p>
+                  )}
+                </div>
               </div>
+            );
+          })}
+        </div>
+
+        {/* Chat panel */}
+        <div className="p-5 flex flex-col gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/35">
+            Chat — {session.chatMessages?.length ?? 0} messages
+          </p>
+          {(!session.chatMessages || session.chatMessages.length === 0) ? (
+            <p className="text-sm text-white/25 italic">No messages exchanged.</p>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
+              {session.chatMessages.map((msg, i) => {
+                const isHost = msg.senderName === host?.name;
+                return (
+                  <div key={i} className={`flex flex-col ${isHost ? "items-start" : "items-end"}`}>
+                    <div className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-sm ${
+                      isHost ? "bg-violet/15 rounded-tl-sm" : "bg-cyan/10 rounded-tr-sm"
+                    }`}>
+                      <p className={`text-[10px] font-bold mb-1 ${isHost ? "text-violet" : "text-cyan"}`}>
+                        {msg.senderName}
+                      </p>
+                      <p className="text-white/85 leading-snug">{msg.text}</p>
+                    </div>
+                    <p className="text-[10px] text-white/22 mt-0.5 px-1">{new Date(msg.at).toLocaleTimeString()}</p>
+                  </div>
+                );
+              })}
             </div>
-          </details>
-        ))}
-        {session.chatMessages && session.chatMessages.length > 0 && (
-          <details className="rounded-lg border border-white/10 bg-black/18 p-3 mt-2">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
-              Chat History ({session.chatMessages.length} messages)
-            </summary>
-            <div className="mt-3 grid gap-2 text-sm text-white/66 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-              {session.chatMessages.map((msg, i) => (
-                <div key={i} className="rounded-lg bg-white/[0.03] p-2">
-                  <p className="text-xs text-white/38 mb-1 flex justify-between">
-                    <span>{msg.senderName}</span>
-                    <span>{new Date(msg.at).toLocaleTimeString()}</span>
-                  </p>
-                  <p className="text-white/80">{msg.text}</p>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
+          )}
+        </div>
+
       </div>
     </section>
   );
