@@ -1,7 +1,7 @@
-import GameSession from "../models/GameSession.js";
 import { getRelationshipProfile } from "../data/relationships.js";
-import { buildQuestionSuggestions } from "./questionGenerator.js";
+import GameSession from "../models/GameSession.js";
 import { generateDarkQuestion, getFallbackDarkQuestion } from "./aiService.js";
+import { buildQuestionSuggestions } from "./questionGenerator.js";
 
 // 5-round game: R1=host→guest, R2=guest→host, R3=platform(AI), R4=host→guest, R5=guest→host
 const PLATFORM_ROUNDS = new Set([3]);
