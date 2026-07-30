@@ -19,7 +19,8 @@ import {
   addChatMessage,
   submitPlatformAnswer,
   submitHonestyJudgment,
-  handleTimerTimeout
+  handleTimerTimeout,
+  saveDoodle
 } from "./services/gameService.js";
 import GameSession from "./models/GameSession.js";
 
@@ -185,14 +186,24 @@ io.on("connection", (socket) => {
   });
 
   // Chat message
-  socket.on("send_chat", async ({ roomCode, text }) => {
+  socket.on("send_chat", async ({ roomCode, text, senderName }) => {
     try {
       if (!text || !String(text).trim()) return;
-      const session = await addChatMessage({ roomCode, socketId: socket.id, text });
+      const session = await addChatMessage({ roomCode, socketId: socket.id, text, senderName });
       const lastMsg = session.chatMessages[session.chatMessages.length - 1];
       io.to(roomCode).emit("chat_message", lastMsg);
     } catch (error) {
       emitSocketError(socket, error);
+    }
+  });
+
+  // Save Doodle
+  socket.on("save_doodle", async ({ roomCode, image, phase, playerName }) => {
+    try {
+      if (!image) return;
+      await saveDoodle({ roomCode, socketId: socket.id, image, phase, playerName });
+    } catch (error) {
+      console.error("Doodle error:", error);
     }
   });
 

@@ -103,6 +103,12 @@ const gameSessionSchema = new mongoose.Schema(
     currentRound: { type: Number, default: 0 },
     maxRounds: { type: Number, default: 10 },
     roundsData: [roundSchema],
+    doodles: [{
+      playerName: String,
+      image: String,
+      phase: String,
+      at: { type: Date, default: Date.now }
+    }],
     chatMessages: [
       {
         senderName: String,

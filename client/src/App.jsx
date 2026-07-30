@@ -286,8 +286,13 @@ function App() {
     socketRef.current?.emit("timer_timeout", { roomCode, phase, gaaliText: `${gaali.emoji} ${gaali.text}` });
   }
 
+  function saveDoodle(image, phase) {
+    socketRef.current?.emit("save_doodle", { roomCode, image, phase, playerName });
+  }
+
   function sendChat(text) {
-    socketRef.current?.emit("send_chat", { roomCode, text });
+    const senderName = roundState?.players?.[roundState?.mySlot]?.name || playerName;
+    socketRef.current?.emit("send_chat", { roomCode, text, senderName });
   }
 
   function openChat() {
@@ -340,6 +345,7 @@ function App() {
             onHonestyJudgment={submitHonestyJudgment}
             onNextRound={nextRound}
             onTimerExpiry={handleTimerExpiry}
+            onDoodleSaved={saveDoodle}
           />
         )}
 
@@ -610,7 +616,7 @@ function RelationshipPicker({ value, onChange }) {
 /* ─── Play Screen ────────────────────────────────────────────────────────────── */
 function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, error,
   onSubmitPrompts, onSubmitAnswers, onSubmitGuess, onSubmitExplanation,
-  onSubmitPlatformAnswer, onHonestyJudgment, onNextRound, onTimerExpiry }) {
+  onSubmitPlatformAnswer, onHonestyJudgment, onNextRound, onTimerExpiry, onDoodleSaved }) {
   const { phase, myRole, targetPlayer, observerPlayer, prompts, targetAnswers, targetAnswerImages,
     lieIndex, observerGuessedLieIndex, targetExplanation,
     isPlatformRound, platformQuestion, platformAnswers, platformAnswerImages } = roundState;
@@ -662,7 +668,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, erro
             )}
 
             {phase === "QUESTION_SELECTION" && isTarget && (
-              <WaitingPanel title={`${observerPlayer.name} is writing 3 questions`} body="You will answer all 3 questions — two truths and one lie." />
+              <WaitingPanel title={`${observerPlayer.name} is writing 3 questions`} body="You will answer all 3 questions — two truths and one lie." onDoodleSaved={onDoodleSaved} />
             )}
 
             {phase === "TARGET_ANSWER" && isTarget && (
@@ -675,7 +681,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, erro
             )}
 
             {phase === "TARGET_ANSWER" && isObserver && (
-              <WaitingPanel title={`${targetPlayer.name} is answering your questions`} body="They'll write 2 truths and 1 lie. Get ready to read them." />
+              <WaitingPanel title={`${targetPlayer.name} is answering your questions`} body="They'll write 2 truths and 1 lie. Get ready to read them." onDoodleSaved={onDoodleSaved} />
             )}
 
             {phase === "OBSERVER_GUESS" && isObserver && (
@@ -688,7 +694,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, erro
             )}
 
             {phase === "OBSERVER_GUESS" && isTarget && (
-              <WaitingPanel title={`${observerPlayer.name} is reading your answers`} body="They're trying to detect your lie. Stay calm." />
+              <WaitingPanel title={`${observerPlayer.name} is reading your answers`} body="They're trying to detect your lie. Stay calm." onDoodleSaved={onDoodleSaved} />
             )}
 
             {phase === "TARGET_EXPLANATION" && isTarget && (
@@ -705,6 +711,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, erro
               <WaitingPanel
                 title={`You got it! ${targetPlayer.name} is explaining`}
                 body="They're typing out the real answer and context behind their lie."
+                onDoodleSaved={onDoodleSaved}
               />
             )}
 
@@ -1145,9 +1152,10 @@ function RevealPanel({ prompts, targetAnswers, targetAnswerImages, lieIndex, obs
 }
 
 /* ─── Waiting ────────────────────────────────────────────────────────────────── */
-function WaitingPanel({ title, body }) {
+function WaitingPanel({ title, body, onDoodleSaved }) {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const hasDrawn = useRef(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1157,7 +1165,14 @@ function WaitingPanel({ title, body }) {
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#06B6D4"; // cyan
     ctx.lineWidth = 3;
-  }, []);
+
+    return () => {
+      if (hasDrawn.current && onDoodleSaved) {
+        const image = canvas.toDataURL("image/png");
+        onDoodleSaved(image, title);
+      }
+    };
+  }, [onDoodleSaved, title]);
 
   function startDrawing(e) {
     const canvas = canvasRef.current;
@@ -1169,6 +1184,7 @@ function WaitingPanel({ title, body }) {
     ctx.beginPath();
     ctx.moveTo(x, y);
     setIsDrawing(true);
+    hasDrawn.current = true;
   }
 
   function draw(e) {
@@ -1219,6 +1235,7 @@ function WaitingPanel({ title, body }) {
           onClick={() => {
             const canvas = canvasRef.current;
             if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+            hasDrawn.current = false;
           }}
           className="mt-3 text-xs text-white/30 hover:text-white/60 transition"
         >
@@ -1857,6 +1874,29 @@ function AdminSessionCard({ session }) {
               })}
             </div>
           )}
+
+          {/* Doodles panel */}
+          <div className="mt-6">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/35 mb-3">
+              Doodles — {session.doodles?.length ?? 0} drawn
+            </p>
+            {(!session.doodles || session.doodles.length === 0) ? (
+              <p className="text-sm text-white/25 italic">No doodles drawn.</p>
+            ) : (
+              <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+                {session.doodles.map((doodle, i) => (
+                  <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-white/80">{doodle.playerName}</p>
+                      <p className="text-[10px] text-white/40">{new Date(doodle.at).toLocaleTimeString()}</p>
+                    </div>
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-white/40 mb-2">{doodle.phase}</p>
+                    <img src={doodle.image} alt="Doodle" className="w-full rounded-lg bg-black/40 border border-white/5" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
       </div>

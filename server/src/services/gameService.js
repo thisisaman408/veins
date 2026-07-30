@@ -441,12 +441,12 @@ export function clearRevealTimer(roomCode) {
   }
 }
 
-export async function addChatMessage({ roomCode, socketId, text }) {
+export async function addChatMessage({ roomCode, socketId, text, senderName }) {
   const session = await GameSession.findOne({ roomCode });
   if (!session) throw new Error("Room not found.");
   
-  const senderName = session.hostSocketId === socketId ? session.players.host.name : session.players.guest.name;
-  session.chatMessages.push({ senderName, text: String(text).trim(), at: new Date() });
+  const finalSenderName = senderName || (session.hostSocketId === socketId ? session.players.host?.name : session.players.guest?.name);
+  session.chatMessages.push({ senderName: finalSenderName, text: String(text).trim(), at: new Date() });
   
   if (session.chatMessages.length > 100) {
     session.chatMessages.shift();
@@ -456,6 +456,15 @@ export async function addChatMessage({ roomCode, socketId, text }) {
   return session;
 }
 
+export async function saveDoodle({ roomCode, socketId, image, phase, playerName }) {
+  const session = await GameSession.findOne({ roomCode });
+  if (!session) return;
+  
+  const name = playerName || (session.hostSocketId === socketId ? session.players.host?.name : session.players.guest?.name);
+  session.doodles.push({ playerName: name, image, phase, at: new Date() });
+  await session.save();
+  return session;
+}
 /**
  * Reconnect a player who refreshed the page.
  * Finds the active IN_PROGRESS session by roomCode + slot, then swaps
