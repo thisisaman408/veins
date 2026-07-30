@@ -168,6 +168,8 @@ function App() {
     // Attempt to rejoin a previous session if a token exists
     const saved = loadSession();
     if (saved) {
+      // Set a flag — if server replies with error, wipe the saved session
+      activeSocket.once("game_error", () => clearSession());
       activeSocket.emit("rejoin_room", { roomCode: saved.roomCode, slot: saved.slot });
     }
 
@@ -358,6 +360,7 @@ function App() {
             onTimerExpiry={handleTimerExpiry}
             onDoodleSaved={saveDoodle}
             onExit={() => {
+              clearSession();
               socketRef.current?.emit("leave_game", { roomCode });
               setScreen("lobby");
               setRoomCode("");
