@@ -3,7 +3,8 @@ import { getRelationshipProfile } from "../data/relationships.js";
 import { buildQuestionSuggestions } from "./questionGenerator.js";
 import { generateDarkQuestion, getFallbackDarkQuestion } from "./aiService.js";
 
-const PLATFORM_ROUNDS = new Set([4, 7, 9]);
+// 5-round game: R1=host→guest, R2=guest→host, R3=platform(AI), R4=host→guest, R5=guest→host
+const PLATFORM_ROUNDS = new Set([3]);
 
 const revealTimers = new Map();
 
@@ -54,11 +55,17 @@ function getMyRelationship(session, socketId) {
 
 function getRoundSlots(session, roundNumber = session.currentRound) {
   const firstTargetSlot = session.firstTargetSlot ?? "host";
-  const targetSlot = (roundNumber - 1) % 2 === 0
+  // Platform rounds have no observer/target — roles are symmetric
+  if (PLATFORM_ROUNDS.has(roundNumber)) {
+    return { targetSlot: "host", observerSlot: "guest" };
+  }
+  // For non-platform rounds, skip the platform round(s) when calculating alternation
+  // e.g. with platform at 3: rounds 1,2,4,5 → effective positions 1,2,3,4
+  const platformsBefore = [...PLATFORM_ROUNDS].filter(p => p < roundNumber).length;
+  const effectivePos = roundNumber - platformsBefore;
+  const targetSlot = (effectivePos - 1) % 2 === 0
     ? firstTargetSlot
-    : firstTargetSlot === "host"
-      ? "guest"
-      : "host";
+    : firstTargetSlot === "host" ? "guest" : "host";
   return {
     targetSlot,
     observerSlot: targetSlot === "host" ? "guest" : "host"
@@ -142,7 +149,7 @@ export async function createSession(hostSocketId, payload = {}) {
     hostSocketId,
     players: { host },
     hostRelationship,
-    maxRounds: Number(payload.maxRounds) || 10,
+    maxRounds: Number(payload.maxRounds) || 5,
     finalMetrics: { roundsWon: 0, roundsLost: 0 },
     chatMessages: [],
     auditLog: [

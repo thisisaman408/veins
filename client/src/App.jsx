@@ -141,7 +141,18 @@ function App() {
 
     activeSocket.on("player_disconnected", () => {
       clearSession();
-      setError("The other player disconnected. Create a new room to continue.");
+      setError("Your opponent's connection dropped. They may rejoin. Create a new room if needed.");
+      setScreen("lobby");
+      setPlayersCount(0);
+      setRoomCode("");
+      setRoundState(null);
+      setChatMessages([]);
+    });
+
+    // Intentional exit by the other player
+    activeSocket.on("player_left", () => {
+      clearSession();
+      setError("Your opponent left the game. The session has ended.");
       setScreen("lobby");
       setPlayersCount(0);
       setRoomCode("");
@@ -347,7 +358,7 @@ function App() {
             onTimerExpiry={handleTimerExpiry}
             onDoodleSaved={saveDoodle}
             onExit={() => {
-              socketRef.current?.disconnect();
+              socketRef.current?.emit("leave_game", { roomCode });
               setScreen("lobby");
               setRoomCode("");
               setRoundState(null);

@@ -91,6 +91,8 @@ function emitRoundState(session, eventName = "game_started") {
 // Grace-period timers: socketId → NodeJS.Timeout
 // Gives a refreshing player 5 s to rejoin before we tell the other player they left.
 const disconnectTimers = new Map();
+// Track sockets that intentionally left so disconnect handler ignores them
+const intentionalLeaves = new Set();
 
 io.on("connection", (socket) => {
   socket.on("create_room", async (payload = {}) => {
@@ -207,6 +209,27 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Intentional leave — player clicked Exit and confirmed
+  socket.on("leave_game", async ({ roomCode }) => {
+    try {
+      intentionalLeaves.add(socket.id);
+      // Cancel any pending reconnect timer for this socket
+      const pending = disconnectTimers.get(socket.id);
+      if (pending) { clearTimeout(pending); disconnectTimers.delete(socket.id); }
+      // Notify the other player immediately (intentional, not a network drop)
+      socket.to(roomCode).emit("player_left", { message: "Your opponent has left the game." });
+      // Clean up session
+      const session = await GameSession.findOne({ roomCode, status: { $ne: "COMPLETED" } });
+      if (session) {
+        session.status = "COMPLETED";
+        await session.save();
+      }
+      socket.disconnect(true);
+    } catch (err) {
+      console.error("leave_game error:", err);
+    }
+  });
+
   // Platform round — player submits their answer
   socket.on("submit_platform_answer", async ({ roomCode, answer, image }) => {
     try {
@@ -246,6 +269,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", async () => {
+    // If this was an intentional leave, already handled — skip
+    if (intentionalLeaves.has(socket.id)) {
+      intentionalLeaves.delete(socket.id);
+      return;
+    }
     const session = await GameSession.findOne({
       status: { $ne: "COMPLETED" },
       $or: [{ hostSocketId: socket.id }, { guestSocketId: socket.id }]
