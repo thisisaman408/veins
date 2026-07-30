@@ -3,8 +3,10 @@ import GameSession from "../models/GameSession.js";
 import { generateDarkQuestion, getFallbackDarkQuestion } from "./aiService.js";
 import { buildQuestionSuggestions } from "./questionGenerator.js";
 
-// 5-round game: R1=host→guest, R2=guest→host, R3=platform(AI), R4=host→guest, R5=guest→host
-const PLATFORM_ROUNDS = new Set([3]);
+// Returns a Set of platform round numbers based on maxRounds
+function getPlatformRounds(session) {
+  return new Set(session.maxRounds === 10 ? [3, 6, 9] : [3]);
+}
 
 const revealTimers = new Map();
 
@@ -55,13 +57,14 @@ function getMyRelationship(session, socketId) {
 
 function getRoundSlots(session, roundNumber = session.currentRound) {
   const firstTargetSlot = session.firstTargetSlot ?? "host";
+  const platformRounds = getPlatformRounds(session);
   // Platform rounds have no observer/target — roles are symmetric
-  if (PLATFORM_ROUNDS.has(roundNumber)) {
+  if (platformRounds.has(roundNumber)) {
     return { targetSlot: "host", observerSlot: "guest" };
   }
   // For non-platform rounds, skip the platform round(s) when calculating alternation
   // e.g. with platform at 3: rounds 1,2,4,5 → effective positions 1,2,3,4
-  const platformsBefore = [...PLATFORM_ROUNDS].filter(p => p < roundNumber).length;
+  const platformsBefore = [...platformRounds].filter(p => p < roundNumber).length;
   const effectivePos = roundNumber - platformsBefore;
   const targetSlot = (effectivePos - 1) % 2 === 0
     ? firstTargetSlot
@@ -76,7 +79,8 @@ async function buildRound(session, roundNumber) {
   const { targetSlot, observerSlot } = getRoundSlots(session, roundNumber);
   const target = getPlayerBySlot(session, targetSlot);
   const observer = getPlayerBySlot(session, observerSlot);
-  const isPlatformRound = PLATFORM_ROUNDS.has(roundNumber);
+  const platformRounds = getPlatformRounds(session);
+  const isPlatformRound = platformRounds.has(roundNumber);
 
   let platformQuestion = null;
   if (isPlatformRound) {

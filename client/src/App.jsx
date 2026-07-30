@@ -64,6 +64,7 @@ function App() {
   const [playersCount, setPlayersCount] = useState(0);
   const [playerName, setPlayerName] = useState("");
   const [relationshipType, setRelationshipType] = useState("close_friends");
+  const [maxRounds, setMaxRounds] = useState(5);
   const [roundState, setRoundState] = useState(null);
   const [finalMetrics, setFinalMetrics] = useState(null);
   const [roundHistory, setRoundHistory] = useState([]);
@@ -240,7 +241,7 @@ function App() {
   function createRoom() {
     if (!nameReady) { setError("Enter your name first."); return; }
     setError("");
-    socketRef.current?.emit("create_room", { playerName: playerName.trim(), relationshipType, maxRounds: 5 });
+    socketRef.current?.emit("create_room", { playerName: playerName.trim(), relationshipType, maxRounds });
   }
 
   function joinRoom(event) {
@@ -336,6 +337,8 @@ function App() {
             setPlayerName={setPlayerName}
             relationshipType={relationshipType}
             setRelationshipType={setRelationshipType}
+            maxRounds={maxRounds}
+            setMaxRounds={setMaxRounds}
             nameReady={nameReady}
             onCreate={createRoom}
             onJoin={joinRoom}
@@ -433,7 +436,7 @@ function TextInput(props) {
 }
 
 /* ─── Lobby ──────────────────────────────────────────────────────────────────── */
-function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playersCount, error, playerName, setPlayerName, relationshipType, setRelationshipType, nameReady, onCreate, onJoin }) {
+function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playersCount, error, playerName, setPlayerName, relationshipType, setRelationshipType, maxRounds, setMaxRounds, nameReady, onCreate, onJoin }) {
   // Track whether joiner has explicitly picked their relationship
   const [joinStep, setJoinStep] = useState("code"); // "code" | "signal"
   const canProceedToSignal = roomReady && nameReady;
@@ -482,6 +485,19 @@ function LobbyScreen({ screen, roomCode, joinCode, setJoinCode, roomReady, playe
               </div>
               <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-lg bg-cyan/14 text-cyan">
                 <Plus size={22} aria-hidden="true" />
+              </div>
+            </div>
+            <div className="mb-4 flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-white/50">Game Length</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setMaxRounds(5)} className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition ${maxRounds === 5 ? "border-cyan/50 bg-cyan/10 text-cyan" : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10"}`}>
+                  <span className="text-sm font-semibold">5 Rounds</span>
+                  <span className="text-[10px] uppercase opacity-70">Quick Session</span>
+                </button>
+                <button type="button" onClick={() => setMaxRounds(10)} className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition ${maxRounds === 10 ? "border-violet/50 bg-violet/10 text-violet" : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10"}`}>
+                  <span className="text-sm font-semibold">10 Rounds</span>
+                  <span className="text-[10px] uppercase opacity-70">Deep Dive</span>
+                </button>
               </div>
             </div>
             <ActionButton icon={LockKeyhole} className="w-full" onClick={onCreate} disabled={!nameReady}>
@@ -1275,6 +1291,13 @@ function ResultsScreen({ finalMetrics, roundHistory, resultsMeta, onPlayAgain })
   const honestCnt = finalMetrics?.honestCount  ?? 0;
   const total     = won + lost || 1;
   const pct       = Math.round((won / total) * 100);
+
+  let connectionVerdict = "";
+  if (pct >= 85) connectionVerdict = "Soulmates / Telepathic";
+  else if (pct >= 60) connectionVerdict = "Solid Connection";
+  else if (pct >= 40) connectionVerdict = "Acquaintances masquerading as friends";
+  else connectionVerdict = "Total Strangers";
+
   const honestyVerdict = susCount > honestCnt
     ? `${resultsMeta?.players?.host?.name ?? "Someone"} seems sus 👀`
     : honestCnt > susCount
@@ -1329,9 +1352,12 @@ function ResultsScreen({ finalMetrics, roundHistory, resultsMeta, onPlayAgain })
               </div>
             </div>
 
-            <h1 className="mt-7 text-3xl font-semibold">
-              {pct >= 80 ? "Mind Reader" : pct >= 50 ? "Sharp Observer" : pct >= 25 ? "Getting Warmer" : "Easily Fooled"}
-            </h1>
+            <div className="mt-7">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">How well do you know each other?</p>
+              <h1 className="text-xl sm:text-2xl font-semibold text-cyan">
+                {connectionVerdict}
+              </h1>
+            </div>
             <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-white/55">
               {resultsMeta?.players?.host?.name} &amp; {resultsMeta?.players?.guest?.name}
             </p>
