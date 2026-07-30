@@ -346,6 +346,12 @@ function App() {
             onNextRound={nextRound}
             onTimerExpiry={handleTimerExpiry}
             onDoodleSaved={saveDoodle}
+            onExit={() => {
+              socketRef.current?.disconnect();
+              setScreen("lobby");
+              setRoomCode("");
+              setRoundState(null);
+            }}
           />
         )}
 
@@ -616,7 +622,7 @@ function RelationshipPicker({ value, onChange }) {
 /* ─── Play Screen ────────────────────────────────────────────────────────────── */
 function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, error,
   onSubmitPrompts, onSubmitAnswers, onSubmitGuess, onSubmitExplanation,
-  onSubmitPlatformAnswer, onHonestyJudgment, onNextRound, onTimerExpiry, onDoodleSaved }) {
+  onSubmitPlatformAnswer, onHonestyJudgment, onNextRound, onTimerExpiry, onDoodleSaved, onExit }) {
   const { phase, myRole, targetPlayer, observerPlayer, prompts, targetAnswers, targetAnswerImages,
     lieIndex, observerGuessedLieIndex, targetExplanation,
     isPlatformRound, platformQuestion, platformAnswers, platformAnswerImages } = roundState;
@@ -627,7 +633,7 @@ function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, erro
   return (
     <div className="min-h-screen">
       <ProgressHeader roomCode={roomCode} roundNumber={roundState.roundNumber} maxRounds={roundState.maxRounds}
-        isPlatformRound={isPlatformRound} />
+        isPlatformRound={isPlatformRound} onExit={onExit} />
       <PageShell className="min-h-[calc(100vh-88px)] gap-4 py-4">
         {/* Status bar */}
         {!isPlatformRound && (
