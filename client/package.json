@@ -11,12 +11,13 @@
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "framer-motion": "^11.18.2",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "recharts": "^2.15.0",
     "socket.io-client": "^4.8.1",
-    "vite": "^6.0.7",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "vite": "^6.0.7"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",

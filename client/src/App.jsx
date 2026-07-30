@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3,
   CheckCircle2,
   ChevronDown,
   Copy,
+  Download,
   DoorOpen,
   Eye,
   KeyRound,
@@ -13,17 +14,27 @@ import {
   Plus,
   RotateCcw,
   Send,
+  Share2,
   Shield,
   ShieldAlert,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
+  Timer,
   Users,
+  Image as ImageIcon,
+  Trash2,
+  Pencil,
   X,
   XCircle
 } from "lucide-react";
+import { compressImage } from "./lib/imageUtils.js";
 import ActionButton from "./components/ActionButton.jsx";
 import Logo from "./components/Logo.jsx";
 import ProgressHeader from "./components/ProgressHeader.jsx";
-import { createSocket } from "./lib/socket.js";
+import { createSocket, saveSession, loadSession, clearSession } from "./lib/socket.js";
+import { useCountdown } from "./hooks/useCountdown.js";
+import { GAALI_BANK } from "./lib/gaaliBank.js";
 
 const serverUrl = import.meta.env.VITE_SERVER_URL ?? "http://localhost:4000";
 
@@ -62,6 +73,10 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
+  // Gaali modal: { emoji, text, playerName } | null
+  const [gaaaliModal, setGaaaliModal] = useState(null);
+  // Platform round: has the current player submitted their answer?
+  const [platformAnswered, setPlatformAnswered] = useState(false);
 
   useEffect(() => {
     if (screen === "admin") {
@@ -94,12 +109,16 @@ function App() {
       setRoomCode(code);
       setScreen("waiting");
       setError("");
+      // "host" slot — save so a refresh can rejoin the waiting room later
+      // (only useful once game starts, but safe to save now)
+      saveSession(code, "host");
       vibrate();
     });
 
     activeSocket.on("joined_room", ({ roomCode: code }) => {
       setRoomCode(code);
       setError("");
+      saveSession(code, "guest");
       vibrate();
     });
 
@@ -121,12 +140,54 @@ function App() {
     });
 
     activeSocket.on("player_disconnected", () => {
+      clearSession();
       setError("The other player disconnected. Create a new room to continue.");
       setScreen("lobby");
       setPlayersCount(0);
       setRoomCode("");
       setRoundState(null);
       setChatMessages([]);
+    });
+
+    // Restore state after a page refresh inside an active game
+    activeSocket.on("round_state_resumed", (payload) => {
+      acceptRoundState(payload);
+    });
+
+    // Attempt to rejoin a previous session if a token exists
+    const saved = loadSession();
+    if (saved) {
+      activeSocket.emit("rejoin_room", { roomCode: saved.roomCode, slot: saved.slot });
+    }
+
+    // Platform round: one player submitted, waiting for the other
+    activeSocket.on("platform_answer_ready", (payload) => {
+      setRoundState(payload);
+      setRoomCode(payload.roomCode);
+    });
+
+    // Platform round: both answered — show reveal
+    activeSocket.on("platform_reveal", (payload) => {
+      acceptRoundState(payload);
+      setPlatformAnswered(false);
+    });
+
+    // Phase auto-advanced after timer timeout
+    activeSocket.on("phase_advanced", (payload) => {
+      acceptRoundState(payload);
+    });
+
+    // Honesty judgment stored — update round state
+    activeSocket.on("honesty_judged", (payload) => {
+      setRoundState(payload);
+      setRoomCode(payload.roomCode);
+    });
+
+    // A gaali was assigned (our own or partner's)
+    activeSocket.on("gaali_assigned", ({ gaaliText }) => {
+      // Only show the modal to the person who timed out (they emitted it)
+      // The server re-broadcasts it — we only pop the modal if it's our own slot
+      // We use the gaaaliModal state set locally in onExpire, so this is a no-op
     });
 
     activeSocket.on("game_error", ({ message }) => {
@@ -147,6 +208,7 @@ function App() {
   const nameReady = useMemo(() => playerName.trim().length >= 2, [playerName]);
 
   function resetLocalState() {
+    clearSession();
     setScreen("lobby");
     setRoomCode("");
     setJoinCode("");
@@ -181,10 +243,10 @@ function App() {
     socketRef.current?.emit("submit_round_prompts", { roomCode, prompts });
   }
 
-  function submitTargetAnswers(targetAnswers, lieIndex) {
+  function submitTargetAnswers(targetAnswers, lieIndex, targetAnswerImages) {
     setIsSubmitting(true);
     setError("");
-    socketRef.current?.emit("submit_target_answers", { roomCode, targetAnswers, lieIndex });
+    socketRef.current?.emit("submit_target_answers", { roomCode, targetAnswers, targetAnswerImages, lieIndex });
   }
 
   function submitObserverGuess(guessedLieIndex) {
@@ -201,7 +263,27 @@ function App() {
 
   function nextRound() {
     setIsSubmitting(true);
+    setPlatformAnswered(false);
     socketRef.current?.emit("next_round", { roomCode });
+  }
+
+  function submitPlatformAnswer(answer, image) {
+    setIsSubmitting(true);
+    setPlatformAnswered(true);
+    socketRef.current?.emit("submit_platform_answer", { roomCode, answer, image });
+    setIsSubmitting(false);
+  }
+
+  function submitHonestyJudgment(verdict) {
+    socketRef.current?.emit("submit_honesty_judgment", { roomCode, verdict });
+  }
+
+  function handleTimerExpiry(phase) {
+    // Pick a random gaali for this player
+    const gaali = GAALI_BANK[Math.floor(Math.random() * GAALI_BANK.length)];
+    const playerName = roundState?.players?.[roundState?.mySlot]?.name ?? "You";
+    setGaaaliModal({ ...gaali, playerName });
+    socketRef.current?.emit("timer_timeout", { roomCode, phase, gaaliText: `${gaali.emoji} ${gaali.text}` });
   }
 
   function sendChat(text) {
@@ -248,12 +330,16 @@ function App() {
             roomCode={roomCode}
             roundState={roundState}
             isSubmitting={isSubmitting}
+            platformAnswered={platformAnswered}
             error={error}
             onSubmitPrompts={submitRoundPrompts}
             onSubmitAnswers={submitTargetAnswers}
             onSubmitGuess={submitObserverGuess}
             onSubmitExplanation={submitTargetExplanation}
+            onSubmitPlatformAnswer={submitPlatformAnswer}
+            onHonestyJudgment={submitHonestyJudgment}
             onNextRound={nextRound}
+            onTimerExpiry={handleTimerExpiry}
           />
         )}
 
@@ -280,6 +366,18 @@ function App() {
           myName={roundState ? (roundState.players?.[roundState.mySlot]?.name ?? playerName) : playerName}
         />
       )}
+
+      {/* Gaali poster modal */}
+      <AnimatePresence>
+        {gaaaliModal && (
+          <GaaaliPoster
+            emoji={gaaaliModal.emoji}
+            text={gaaaliModal.text}
+            playerName={gaaaliModal.playerName}
+            onClose={() => setGaaaliModal(null)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
@@ -510,93 +608,125 @@ function RelationshipPicker({ value, onChange }) {
 }
 
 /* ─── Play Screen ────────────────────────────────────────────────────────────── */
-function PlayScreen({ roomCode, roundState, isSubmitting, error, onSubmitPrompts, onSubmitAnswers, onSubmitGuess, onSubmitExplanation, onNextRound }) {
-  const { phase, myRole, targetPlayer, observerPlayer, prompts, targetAnswers, lieIndex, observerGuessedLieIndex, targetExplanation } = roundState;
+function PlayScreen({ roomCode, roundState, isSubmitting, platformAnswered, error,
+  onSubmitPrompts, onSubmitAnswers, onSubmitGuess, onSubmitExplanation,
+  onSubmitPlatformAnswer, onHonestyJudgment, onNextRound, onTimerExpiry }) {
+  const { phase, myRole, targetPlayer, observerPlayer, prompts, targetAnswers, targetAnswerImages,
+    lieIndex, observerGuessedLieIndex, targetExplanation,
+    isPlatformRound, platformQuestion, platformAnswers, platformAnswerImages } = roundState;
 
   const isTarget   = myRole === "target";
   const isObserver = myRole === "observer";
 
   return (
     <div className="min-h-screen">
-      <ProgressHeader roomCode={roomCode} roundNumber={roundState.roundNumber} maxRounds={roundState.maxRounds} />
+      <ProgressHeader roomCode={roomCode} roundNumber={roundState.roundNumber} maxRounds={roundState.maxRounds}
+        isPlatformRound={isPlatformRound} />
       <PageShell className="min-h-[calc(100vh-88px)] gap-4 py-4">
         {/* Status bar */}
-        <section className="glass-panel mx-auto grid w-full max-w-6xl gap-3 rounded-xl p-4 sm:grid-cols-3">
-          <StatusChip label="You are"    value={isObserver ? "Asker / Observer" : "Target"} accent="cyan" />
-          <StatusChip label="Target"     value={targetPlayer.name} accent="emerald" />
-          <StatusChip label="Your Signal" value={roundState.myRelationship?.label ?? "—"} accent="violet" />
-        </section>
+        {!isPlatformRound && (
+          <section className="glass-panel mx-auto grid w-full max-w-6xl gap-3 rounded-xl p-4 sm:grid-cols-3">
+            <StatusChip label="You are"    value={isObserver ? "Asker / Observer" : "Target"} accent="cyan" />
+            <StatusChip label="Target"     value={targetPlayer.name} accent="emerald" />
+            <StatusChip label="Your Signal" value={roundState.myRelationship?.label ?? "—"} accent="violet" />
+          </section>
+        )}
 
-        {/* Phase routing */}
-        {phase === "QUESTION_SELECTION" && isObserver && (
-          <QuestionComposer
+        {/* ── Platform rounds (4, 7, 9) ── */}
+        {isPlatformRound && (phase === "PLATFORM_WAIT" || phase === "PLATFORM_REVEAL") && (
+          <PlatformRoundPanel
             roundState={roundState}
+            platformQuestion={platformQuestion}
+            platformAnswers={platformAnswers}
+            platformAnswerImages={platformAnswerImages}
+            phase={phase}
             isSubmitting={isSubmitting}
-            onSubmit={onSubmitPrompts}
-          />
-        )}
-
-        {phase === "QUESTION_SELECTION" && isTarget && (
-          <WaitingPanel title={`${observerPlayer.name} is writing 3 questions`} body="You will answer all 3 questions — two truths and one lie." />
-        )}
-
-        {phase === "TARGET_ANSWER" && isTarget && (
-          <TargetAnswerPanel
-            prompts={prompts}
-            isSubmitting={isSubmitting}
-            onSubmit={onSubmitAnswers}
-          />
-        )}
-
-        {phase === "TARGET_ANSWER" && isObserver && (
-          <WaitingPanel title={`${targetPlayer.name} is answering your questions`} body="They'll write 2 truths and 1 lie. Get ready to read them." />
-        )}
-
-        {phase === "OBSERVER_GUESS" && isObserver && (
-          <ObserverGuessPanel
-            prompts={prompts}
-            targetAnswers={targetAnswers}
-            isSubmitting={isSubmitting}
-            onSubmit={onSubmitGuess}
-          />
-        )}
-
-        {phase === "OBSERVER_GUESS" && isTarget && (
-          <WaitingPanel title={`${observerPlayer.name} is reading your answers`} body="They're trying to detect your lie. Stay calm." />
-        )}
-
-        {phase === "TARGET_EXPLANATION" && isTarget && (
-          <ExplanationPanel
-            prompts={prompts}
-            targetAnswers={targetAnswers}
-            lieIndex={lieIndex}
-            isSubmitting={isSubmitting}
-            onSubmit={onSubmitExplanation}
-          />
-        )}
-
-        {phase === "TARGET_EXPLANATION" && isObserver && (
-          <WaitingPanel
-            title={`You got it! ${targetPlayer.name} is explaining`}
-            body="They're typing out the real answer and context behind their lie."
-          />
-        )}
-
-        {phase === "REVEAL" && (
-          <RevealPanel
-            prompts={prompts}
-            targetAnswers={targetAnswers}
-            lieIndex={lieIndex}
-            observerGuessedLieIndex={observerGuessedLieIndex}
-            targetExplanation={targetExplanation}
-            targetPlayer={targetPlayer}
-            observerPlayer={observerPlayer}
-            isTarget={isTarget}
-            isObserver={isObserver}
-            isSubmitting={isSubmitting}
+            platformAnswered={platformAnswered}
+            onSubmit={onSubmitPlatformAnswer}
             onNextRound={onNextRound}
-            roundState={roundState}
+            onTimerExpiry={() => onTimerExpiry("PLATFORM_WAIT")}
+            onHonestyJudgment={onHonestyJudgment}
           />
+        )}
+
+        {/* ── Regular round phases ── */}
+        {!isPlatformRound && (
+          <>
+            {phase === "QUESTION_SELECTION" && isObserver && (
+              <QuestionComposer
+                roundState={roundState}
+                isSubmitting={isSubmitting}
+                onSubmit={onSubmitPrompts}
+                onTimerExpiry={() => onTimerExpiry("QUESTION_SELECTION")}
+              />
+            )}
+
+            {phase === "QUESTION_SELECTION" && isTarget && (
+              <WaitingPanel title={`${observerPlayer.name} is writing 3 questions`} body="You will answer all 3 questions — two truths and one lie." />
+            )}
+
+            {phase === "TARGET_ANSWER" && isTarget && (
+              <TargetAnswerPanel
+                prompts={prompts}
+                isSubmitting={isSubmitting}
+                onSubmit={onSubmitAnswers}
+                onTimerExpiry={() => onTimerExpiry("TARGET_ANSWER")}
+              />
+            )}
+
+            {phase === "TARGET_ANSWER" && isObserver && (
+              <WaitingPanel title={`${targetPlayer.name} is answering your questions`} body="They'll write 2 truths and 1 lie. Get ready to read them." />
+            )}
+
+            {phase === "OBSERVER_GUESS" && isObserver && (
+              <ObserverGuessPanel
+                prompts={prompts}
+                targetAnswers={targetAnswers}
+                isSubmitting={isSubmitting}
+                onSubmit={onSubmitGuess}
+              />
+            )}
+
+            {phase === "OBSERVER_GUESS" && isTarget && (
+              <WaitingPanel title={`${observerPlayer.name} is reading your answers`} body="They're trying to detect your lie. Stay calm." />
+            )}
+
+            {phase === "TARGET_EXPLANATION" && isTarget && (
+              <ExplanationPanel
+                prompts={prompts}
+                targetAnswers={targetAnswers}
+                lieIndex={lieIndex}
+                isSubmitting={isSubmitting}
+                onSubmit={onSubmitExplanation}
+              />
+            )}
+
+            {phase === "TARGET_EXPLANATION" && isObserver && (
+              <WaitingPanel
+                title={`You got it! ${targetPlayer.name} is explaining`}
+                body="They're typing out the real answer and context behind their lie."
+              />
+            )}
+
+            {phase === "REVEAL" && (
+              <RevealPanel
+                prompts={prompts}
+                targetAnswers={targetAnswers}
+                targetAnswerImages={targetAnswerImages}
+                lieIndex={lieIndex}
+                observerGuessedLieIndex={observerGuessedLieIndex}
+                targetExplanation={targetExplanation}
+                targetPlayer={targetPlayer}
+                observerPlayer={observerPlayer}
+                isTarget={isTarget}
+                isObserver={isObserver}
+                isSubmitting={isSubmitting}
+                onNextRound={onNextRound}
+                onHonestyJudgment={onHonestyJudgment}
+                roundState={roundState}
+              />
+            )}
+          </>
         )}
 
         {error ? <p className="text-center text-sm text-danger">{error}</p> : null}
@@ -616,10 +746,12 @@ function StatusChip({ label, value, accent }) {
 }
 
 /* ─── Observer: Pick 3 questions ─────────────────────────────────────────────── */
-function QuestionComposer({ roundState, isSubmitting, onSubmit }) {
+function QuestionComposer({ roundState, isSubmitting, onSubmit, onTimerExpiry }) {
   const [prompts, setPrompts] = useState(["", "", ""]);
   const [activeSuggestion, setActiveSuggestion] = useState(null);
   const suggestions = roundState.questionSuggestions ?? [];
+  const cb = useCallback(() => onTimerExpiry?.(), [onTimerExpiry]);
+  const { remaining, pct, urgent } = useCountdown(180, cb);
 
   function useSuggestion(s) {
     setPrompts([...s.prompts]);
@@ -667,12 +799,15 @@ function QuestionComposer({ roundState, isSubmitting, onSubmit }) {
 
       {/* Editor */}
       <section className="glass-panel rounded-xl p-4 sm:p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <Eye size={20} className="text-emerald" aria-hidden="true" />
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald">Your 3 Questions</p>
-            <h2 className="text-xl font-semibold">For {roundState.targetPlayer.name}</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Eye size={20} className="text-emerald" aria-hidden="true" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald">Your 3 Questions</p>
+              <h2 className="text-xl font-semibold">For {roundState.targetPlayer.name}</h2>
+            </div>
           </div>
+          <TimerRing remaining={remaining} pct={pct} urgent={urgent} />
         </div>
         <p className="mb-4 rounded-lg border border-white/10 bg-black/14 p-3 text-sm text-white/55">
           Your target will answer all 3 questions — <span className="text-white">2 truths and 1 lie</span>. You will then guess which one is the lie.
@@ -685,7 +820,7 @@ function QuestionComposer({ roundState, isSubmitting, onSubmit }) {
                 className="focus-ring w-full resize-none rounded-lg border border-white/12 bg-black/25 p-4 text-sm text-white placeholder:text-white/30 min-h-[80px]"
                 value={p}
                 onChange={(e) => updatePrompt(i, e.target.value)}
-                placeholder={`Type question ${i + 1}...`}
+                placeholder={`Type question ${i + 1} for ${roundState.targetPlayer.name}...`}
               />
             </div>
           ))}
@@ -699,12 +834,30 @@ function QuestionComposer({ roundState, isSubmitting, onSubmit }) {
 }
 
 /* ─── Target: Answer 3 questions + pick the lie ──────────────────────────────── */
-function TargetAnswerPanel({ prompts, isSubmitting, onSubmit }) {
+function TargetAnswerPanel({ prompts, isSubmitting, onSubmit, onTimerExpiry }) {
   const [answers, setAnswers] = useState(["", "", ""]);
+  const [images, setImages] = useState([null, null, null]);
   const [lieIndex, setLieIndex] = useState(null);
+  const cb = useCallback(() => onTimerExpiry?.(), [onTimerExpiry]);
+  const { remaining, pct, urgent } = useCountdown(90, cb);
 
   function updateAnswer(i, val) {
     setAnswers((prev) => { const next = [...prev]; next[i] = val; return next; });
+  }
+
+  async function handleImagePick(i, e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file);
+      setImages((prev) => { const next = [...prev]; next[i] = dataUrl; return next; });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function removeImage(i) {
+    setImages((prev) => { const next = [...prev]; next[i] = null; return next; });
   }
 
   const canSubmit = answers.every((a) => a.trim().length > 1) && lieIndex !== null && !isSubmitting;
@@ -712,12 +865,15 @@ function TargetAnswerPanel({ prompts, isSubmitting, onSubmit }) {
   return (
     <div className="mx-auto w-full max-w-4xl">
       <section className="glass-panel rounded-xl p-5 sm:p-7">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald">Your Turn</p>
-          <h2 className="mt-2 text-2xl font-semibold">Answer all 3 questions</h2>
-          <p className="mt-2 text-sm text-white/55">
-            Write honest answers — but <span className="text-white font-semibold">one of them must be a lie</span>. Tap which one you are lying on.
-          </p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald">Your Turn</p>
+            <h2 className="mt-2 text-2xl font-semibold">Answer all 3 questions</h2>
+            <p className="mt-2 text-sm text-white/55">
+              Write honest answers — but <span className="text-white font-semibold">one of them must be a lie</span>. Tap which one you are lying on.
+            </p>
+          </div>
+          <TimerRing remaining={remaining} pct={pct} urgent={urgent} />
         </div>
 
         <div className="grid gap-5">
@@ -739,12 +895,26 @@ function TargetAnswerPanel({ prompts, isSubmitting, onSubmit }) {
                   {lieIndex === i ? "🤥 Lie" : "Mark as Lie"}
                 </button>
               </div>
-              <textarea
-                className="focus-ring w-full resize-none rounded-lg border border-white/10 bg-black/30 p-3 text-sm text-white placeholder:text-white/28 min-h-[70px]"
-                value={answers[i]}
-                onChange={(e) => updateAnswer(i, e.target.value)}
-                placeholder={lieIndex === i ? "Type your lie..." : "Type your true answer..."}
-              />
+              <div className="relative">
+                <textarea
+                  className="focus-ring w-full resize-none rounded-lg border border-white/10 bg-black/30 p-3 pr-12 text-sm text-white placeholder:text-white/28 min-h-[70px]"
+                  value={answers[i]}
+                  onChange={(e) => updateAnswer(i, e.target.value)}
+                  placeholder={lieIndex === i ? "Type your lie..." : "Type your true answer..."}
+                />
+                <label className="absolute right-3 top-3 cursor-pointer text-white/30 hover:text-white transition">
+                  <ImageIcon size={20} />
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick(i, e)} />
+                </label>
+              </div>
+              {images[i] && (
+                <div className="mt-2 relative inline-block">
+                  <img src={images[i]} alt="Attached" className="h-20 w-20 rounded-md object-cover border border-white/10" />
+                  <button onClick={() => removeImage(i)} className="absolute -top-2 -right-2 rounded-full bg-danger text-white p-1 shadow-md hover:bg-danger/80">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
 
@@ -754,7 +924,7 @@ function TargetAnswerPanel({ prompts, isSubmitting, onSubmit }) {
 
           <ActionButton
             icon={CheckCircle2}
-            onClick={() => onSubmit(answers, lieIndex)}
+            onClick={() => onSubmit(answers, lieIndex, images)}
             disabled={!canSubmit}
             className="w-full"
           >
@@ -856,9 +1026,13 @@ function ExplanationPanel({ prompts, targetAnswers, lieIndex, isSubmitting, onSu
 }
 
 /* ─── Reveal ─────────────────────────────────────────────────────────────────── */
-function RevealPanel({ prompts, targetAnswers, lieIndex, observerGuessedLieIndex, targetExplanation, targetPlayer, observerPlayer, isTarget, isObserver, isSubmitting, onNextRound, roundState }) {
+function RevealPanel({ prompts, targetAnswers, targetAnswerImages, lieIndex, observerGuessedLieIndex, targetExplanation,
+  targetPlayer, observerPlayer, isTarget, isObserver, isSubmitting,
+  onNextRound, onHonestyJudgment, roundState }) {
   const isCorrect = observerGuessedLieIndex === lieIndex;
   const canContinue = isObserver;
+  const judgment = roundState?.honestyJudgment;
+  const hasJudged = judgment?.verdict !== null && judgment?.verdict !== undefined;
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -905,6 +1079,9 @@ function RevealPanel({ prompts, targetAnswers, lieIndex, observerGuessedLieIndex
                 </div>
                 <p className="text-sm text-white/55 mb-1 leading-5">{prompt}</p>
                 <p className="text-base font-semibold text-white">{targetAnswers[i]}</p>
+                {targetAnswerImages?.[i] && (
+                  <img src={targetAnswerImages[i]} alt="Upload" className="mt-3 h-32 w-full max-w-[200px] object-cover rounded-md border border-white/10" />
+                )}
               </motion.div>
             );
           })}
@@ -924,6 +1101,34 @@ function RevealPanel({ prompts, targetAnswers, lieIndex, observerGuessedLieIndex
           </motion.div>
         )}
 
+        {/* Honesty judgment — only the observer rates the target */}
+        {isObserver && (
+          <div className="mb-6 rounded-xl border border-white/10 bg-black/18 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/45 mb-3">
+              Was {targetPlayer.name} being honest overall?
+            </p>
+            {hasJudged ? (
+              <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                judgment.verdict === "honest" ? "bg-emerald/14 text-emerald" : "bg-amber-400/14 text-amber-400"
+              }`}>
+                {judgment.verdict === "honest" ? <ThumbsUp size={16} /> : <ThumbsDown size={16} />}
+                You rated: {judgment.verdict === "honest" ? "Seemed Honest" : "Kinda Sus"}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => onHonestyJudgment("honest")}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-4 py-3 text-sm font-semibold text-emerald transition hover:bg-emerald/20">
+                  <ThumbsUp size={16} /> Seemed Honest
+                </button>
+                <button type="button" onClick={() => onHonestyJudgment("sus")}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-400/20">
+                  <ThumbsDown size={16} /> Kinda Sus
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Continue */}
         {canContinue ? (
           <ActionButton icon={RotateCcw} onClick={onNextRound} disabled={isSubmitting} className="w-full">
@@ -941,6 +1146,47 @@ function RevealPanel({ prompts, targetAnswers, lieIndex, observerGuessedLieIndex
 
 /* ─── Waiting ────────────────────────────────────────────────────────────────── */
 function WaitingPanel({ title, body }) {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#06B6D4"; // cyan
+    ctx.lineWidth = 3;
+  }, []);
+
+  function startDrawing(e) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  }
+
+  function draw(e) {
+    if (!isDrawing) return;
+    e.preventDefault(); // prevent scrolling on touch
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+
+  function stopDrawing() {
+    setIsDrawing(false);
+  }
+
   return (
     <div className="glass-panel mx-auto flex min-h-[420px] w-full max-w-2xl flex-col items-center justify-center rounded-xl p-6 text-center">
       <div className="relative mb-6 flex h-28 w-28 items-center justify-center rounded-full border border-cyan/20 bg-cyan/8">
@@ -949,53 +1195,154 @@ function WaitingPanel({ title, body }) {
       </div>
       <h2 className="text-2xl font-semibold">{title}</h2>
       <p className="mt-3 max-w-sm text-sm leading-6 text-white/56">{body}</p>
+
+      {/* Doodle Pad */}
+      <div className="mt-10 w-full max-w-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-white/40 mb-3 flex items-center justify-center gap-2">
+          <Pencil size={14} /> Draw something while waiting!
+        </p>
+        <canvas
+          ref={canvasRef}
+          width={300}
+          height={150}
+          className="mx-auto rounded-xl border border-white/10 bg-black/20 cursor-crosshair touch-none"
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          onTouchCancel={stopDrawing}
+        />
+        <button
+          onClick={() => {
+            const canvas = canvasRef.current;
+            if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+          }}
+          className="mt-3 text-xs text-white/30 hover:text-white/60 transition"
+        >
+          Clear Pad
+        </button>
+      </div>
     </div>
   );
 }
 
-/* ─── Results ────────────────────────────────────────────────────────────────── */
+/* ─── Results ─────────────────────────────────────────────────────────────────── */
 function ResultsScreen({ finalMetrics, roundHistory, resultsMeta, onPlayAgain }) {
-  const won  = finalMetrics?.roundsWon  ?? 0;
-  const lost = finalMetrics?.roundsLost ?? 0;
-  const total = won + lost || 1;
-  const pct = Math.round((won / total) * 100);
+  const scorecardRef = useRef(null);
+  const won       = finalMetrics?.roundsWon    ?? 0;
+  const lost      = finalMetrics?.roundsLost   ?? 0;
+  const susCount  = finalMetrics?.susCount     ?? 0;
+  const honestCnt = finalMetrics?.honestCount  ?? 0;
+  const total     = won + lost || 1;
+  const pct       = Math.round((won / total) * 100);
+  const honestyVerdict = susCount > honestCnt
+    ? `${resultsMeta?.players?.host?.name ?? "Someone"} seems sus 👀`
+    : honestCnt > susCount
+      ? "Y'all were surprisingly honest 😇"
+      : "Even split — who knows what to believe 🤷";
+
+  async function downloadScorecard() {
+    if (!scorecardRef.current) return;
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(scorecardRef.current, { backgroundColor: "#0a0a12", scale: 2 });
+      const link = document.createElement("a");
+      link.download = "veritas-scorecard.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (e) {
+      console.error("Screenshot failed:", e);
+    }
+  }
+
+  async function shareScorecard() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Veritas — Game Over!",
+          text: `We played Veritas! Lie detection rate: ${pct}%. ${honestyVerdict}`,
+          url: window.location.origin
+        });
+      } catch { /* user cancelled */ }
+    } else {
+      downloadScorecard();
+    }
+  }
 
   return (
     <PageShell className="gap-6 py-8">
       <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
         {/* Score Card */}
         <section className="glass-panel rounded-xl p-6 text-center sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan">Game Over</p>
-          <div className="relative mx-auto mt-7 flex h-48 w-48 items-center justify-center rounded-full border border-cyan/28 bg-cyan/8 shadow-glow">
-            <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 200 200" aria-hidden="true">
-              <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="14" />
-              <motion.circle cx="100" cy="100" r="84" fill="none" stroke="#06B6D4" strokeLinecap="round" strokeWidth="14" initial={{ pathLength: 0 }} animate={{ pathLength: pct / 100 }} transition={{ duration: 1, ease: "easeOut" }} />
-            </svg>
-            <div>
-              <div className="text-5xl font-semibold">{pct}%</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/45">Read rate</div>
+          {/* Capturable scorecard area */}
+          <div ref={scorecardRef} className="rounded-xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan">Game Over</p>
+            <div className="relative mx-auto mt-7 flex h-48 w-48 items-center justify-center rounded-full border border-cyan/28 bg-cyan/8 shadow-glow">
+              <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 200 200" aria-hidden="true">
+                <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="14" />
+                <motion.circle cx="100" cy="100" r="84" fill="none" stroke="#06B6D4" strokeLinecap="round" strokeWidth="14"
+                  initial={{ pathLength: 0 }} animate={{ pathLength: pct / 100 }} transition={{ duration: 1, ease: "easeOut" }} />
+              </svg>
+              <div>
+                <div className="text-5xl font-semibold">{pct}%</div>
+                <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/45">Read rate</div>
+              </div>
             </div>
+
+            <h1 className="mt-7 text-3xl font-semibold">
+              {pct >= 80 ? "Mind Reader" : pct >= 50 ? "Sharp Observer" : pct >= 25 ? "Getting Warmer" : "Easily Fooled"}
+            </h1>
+            <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-white/55">
+              {resultsMeta?.players?.host?.name} &amp; {resultsMeta?.players?.guest?.name}
+            </p>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-cyan/28 bg-cyan/8 p-4">
+                <p className="text-3xl font-semibold text-cyan">{won}</p>
+                <p className="mt-1 text-xs text-white/50 uppercase tracking-[0.14em]">Lies caught</p>
+              </div>
+              <div className="rounded-xl border border-danger/28 bg-danger/6 p-4">
+                <p className="text-3xl font-semibold text-danger">{lost}</p>
+                <p className="mt-1 text-xs text-white/50 uppercase tracking-[0.14em]">Lies missed</p>
+              </div>
+            </div>
+
+            {/* Honesty meter */}
+            {(susCount + honestCnt) > 0 && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/40">Honesty Meter</p>
+                <div className="flex items-center gap-3 text-sm">
+                  <ThumbsUp size={16} className="text-emerald shrink-0" />
+                  <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                    <motion.div
+                      className="absolute inset-y-0 left-0 rounded-full bg-emerald"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.round((honestCnt / (honestCnt + susCount)) * 100)}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                    />
+                  </div>
+                  <ThumbsDown size={16} className="text-amber-400 shrink-0" />
+                </div>
+                <p className="mt-2.5 text-xs text-white/50">{honestyVerdict}</p>
+              </div>
+            )}
           </div>
 
-          <h1 className="mt-7 text-3xl font-semibold">
-            {pct >= 80 ? "Mind Reader" : pct >= 50 ? "Sharp Observer" : pct >= 25 ? "Getting Warmer" : "Easily Fooled"}
-          </h1>
-          <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-white/55">
-            {resultsMeta?.players?.host?.name} & {resultsMeta?.players?.guest?.name}
-          </p>
-
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-cyan/28 bg-cyan/8 p-4">
-              <p className="text-3xl font-semibold text-cyan">{won}</p>
-              <p className="mt-1 text-xs text-white/50 uppercase tracking-[0.14em]">Lies caught</p>
-            </div>
-            <div className="rounded-xl border border-danger/28 bg-danger/6 p-4">
-              <p className="text-3xl font-semibold text-danger">{lost}</p>
-              <p className="mt-1 text-xs text-white/50 uppercase tracking-[0.14em]">Lies missed</p>
-            </div>
+          {/* Action buttons */}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={shareScorecard}
+              className="flex items-center justify-center gap-2 rounded-xl border border-cyan/40 bg-cyan/10 px-4 py-3 text-sm font-semibold text-cyan transition hover:bg-cyan/20">
+              <Share2 size={16} /> Share
+            </button>
+            <button type="button" onClick={downloadScorecard}
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/14">
+              <Download size={16} /> Save
+            </button>
           </div>
-
-          <ActionButton icon={RotateCcw} variant="secondary" onClick={onPlayAgain} className="mt-6 w-full">
+          <ActionButton icon={RotateCcw} variant="secondary" onClick={onPlayAgain} className="mt-3 w-full">
             Play Again
           </ActionButton>
         </section>
@@ -1011,25 +1358,66 @@ function ResultsScreen({ finalMetrics, roundHistory, resultsMeta, onPlayAgain })
               <details key={round.roundNumber} className="rounded-xl border border-white/10 bg-black/18 p-4">
                 <summary className="flex cursor-pointer items-center justify-between gap-3">
                   <span className="text-sm font-semibold text-white">
-                    Round {round.roundNumber}: {round.observerPlayer.name} asked {round.targetPlayer.name}
+                    {round.isPlatformRound
+                      ? `🌎 Round ${round.roundNumber}: Platform Question`
+                      : `Round ${round.roundNumber}: ${round.observerPlayer?.name} asked ${round.targetPlayer?.name}`}
                   </span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${round.isCorrect ? "bg-cyan/18 text-cyan" : "bg-danger/18 text-danger"}`}>
-                    {round.isCorrect ? "Caught" : "Missed"}
-                  </span>
+                  {!round.isPlatformRound && (
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${round.isCorrect ? "bg-cyan/18 text-cyan" : "bg-danger/18 text-danger"}`}>
+                      {round.isCorrect ? "Caught" : "Missed"}
+                    </span>
+                  )}
                 </summary>
                 <div className="mt-3 grid gap-2">
-                  {(round.prompts ?? []).map((p, i) => (
-                    <div key={i} className={`rounded-lg p-3 text-sm ${i === round.lieIndex ? "border border-danger/30 bg-danger/6" : "bg-white/[0.04]"}`}>
-                      <p className="text-xs text-white/40 mb-1">Q{i + 1} — {i === round.lieIndex ? "🤥 Lie" : "✓ Truth"}</p>
-                      <p className="text-white/60 mb-1">{p}</p>
-                      <p className="font-semibold text-white">{round.targetAnswers?.[i]}</p>
-                    </div>
-                  ))}
-                  {round.targetExplanation && (
-                    <div className="rounded-lg border border-amber-400/25 bg-amber-400/6 p-3 text-sm">
-                      <p className="text-xs text-amber-400 mb-1">Real Answer</p>
-                      <p className="text-white/80">{round.targetExplanation}</p>
-                    </div>
+                  {round.isPlatformRound ? (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-violet/70 mb-1">Platform Q</p>
+                      <p className="text-sm text-white/75 mb-2">{round.platformQuestion}</p>
+                      {round.platformAnswers?.host && (
+                        <div className="rounded-lg bg-white/[0.04] p-3 text-sm">
+                          <p className="text-xs text-white/35 mb-1">Host</p>
+                          <p className="text-white">{round.platformAnswers.host}</p>
+                          {round.platformAnswerImages?.host && (
+                            <img src={round.platformAnswerImages.host} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                          )}
+                        </div>
+                      )}
+                      {round.platformAnswers?.guest && (
+                        <div className="rounded-lg bg-white/[0.04] p-3 text-sm">
+                          <p className="text-xs text-white/35 mb-1">Guest</p>
+                          <p className="text-white">{round.platformAnswers.guest}</p>
+                          {round.platformAnswerImages?.guest && (
+                            <img src={round.platformAnswerImages.guest} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {(round.prompts ?? []).map((p, i) => (
+                        <div key={i} className={`rounded-lg p-3 text-sm ${i === round.lieIndex ? "border border-danger/30 bg-danger/6" : "bg-white/[0.04]"}`}>
+                          <p className="text-xs text-white/40 mb-1">Q{i + 1} — {i === round.lieIndex ? "🤥 Lie" : "✓ Truth"}</p>
+                          <p className="text-white/60 mb-1">{p}</p>
+                          <p className="font-semibold text-white">{round.targetAnswers?.[i]}</p>
+                          {round.targetAnswerImages?.[i] && (
+                            <img src={round.targetAnswerImages[i]} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                          )}
+                        </div>
+                      ))}
+                      {round.targetExplanation && (
+                        <div className="rounded-lg border border-amber-400/25 bg-amber-400/6 p-3 text-sm">
+                          <p className="text-xs text-amber-400 mb-1">Real Answer</p>
+                          <p className="text-white/80">{round.targetExplanation}</p>
+                        </div>
+                      )}
+                      {round.honestyJudgment?.verdict && (
+                        <div className={`rounded-lg p-3 text-xs font-semibold ${
+                          round.honestyJudgment.verdict === "honest" ? "bg-emerald/10 text-emerald" : "bg-amber-400/10 text-amber-400"
+                        }`}>
+                          {round.honestyJudgment.judgedBy} rated: {round.honestyJudgment.verdict === "honest" ? "👍 Seemed Honest" : "👎 Kinda Sus"}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </details>
@@ -1337,6 +1725,38 @@ function AdminSessionCard({ session }) {
           )}
 
           {session.roundsData?.map((round, index) => {
+            if (round.isPlatformRound) {
+              return (
+                <div key={index} className="rounded-xl border border-violet/20 bg-violet/4 p-4">
+                  <div className="flex items-start justify-between gap-2 mb-4">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.15em] text-violet/60 mb-1">🌎 Round {index + 1}</p>
+                      <p className="text-sm font-semibold leading-snug text-white/80">Platform Round</p>
+                    </div>
+                  </div>
+                  <div className="mb-4 rounded-lg bg-violet/10 border border-violet/20 p-3 text-sm text-violet">
+                    {round.platformQuestion}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg bg-white/[0.04] p-3 text-sm">
+                      <p className="text-xs text-white/35 mb-1">Host ({host?.name})</p>
+                      <p className="text-white">{round.platformAnswers?.host ?? "—"}</p>
+                      {round.platformAnswerImages?.host && (
+                        <img src={round.platformAnswerImages.host} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-white/[0.04] p-3 text-sm">
+                      <p className="text-xs text-white/35 mb-1">Guest ({guest?.name})</p>
+                      <p className="text-white">{round.platformAnswers?.guest ?? "—"}</p>
+                      {round.platformAnswerImages?.guest && (
+                        <img src={round.platformAnswerImages.guest} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             const caught     = round.lieIndex === round.observerGuessedLieIndex;
             const guessedIdx = round.observerGuessedLieIndex;
             return (
@@ -1380,6 +1800,9 @@ function AdminSessionCard({ session }) {
                         <p className="text-sm font-semibold text-white">
                           "{round.targetAnswers?.[i] ?? "—"}"
                         </p>
+                        {round.targetAnswerImages?.[i] && (
+                          <img src={round.targetAnswerImages[i]} alt="Upload" className="mt-2 h-20 w-auto rounded-md border border-white/10" />
+                        )}
                       </div>
                     );
                   })}
@@ -1442,3 +1865,269 @@ function AdminSessionCard({ session }) {
 }
 
 export default App;
+
+/* ─── Timer Ring ─────────────────────────────────────────────────────────────────── */
+function TimerRing({ remaining, pct, urgent }) {
+  const r = 22;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+  const mins = Math.floor(remaining / 60);
+  const secs = String(remaining % 60).padStart(2, "0");
+  const label = `${mins}:${secs}`;
+
+  return (
+    <div className={`relative flex shrink-0 h-16 w-16 items-center justify-center ${urgent ? "animate-pulse" : ""}`}>
+      <svg className="absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
+        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
+        <circle
+          cx="28" cy="28" r={r} fill="none"
+          stroke={urgent ? "#f43f5e" : "#06B6D4"}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${circ}`}
+          style={{ transition: "stroke-dasharray 0.5s linear, stroke 0.3s" }}
+        />
+      </svg>
+      <div className="text-center">
+        <Timer size={11} className={`mx-auto mb-0.5 ${urgent ? "text-danger" : "text-white/40"}`} aria-hidden="true" />
+        <span className={`block text-[11px] font-semibold tabular-nums leading-none ${urgent ? "text-danger" : "text-white/70"}`}>
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Platform Round Panel ──────────────────────────────────────────────────────── */
+function PlatformRoundPanel({ roundState, platformQuestion, platformAnswers, platformAnswerImages, phase,
+  isSubmitting, platformAnswered, onSubmit, onNextRound, onTimerExpiry, onHonestyJudgment }) {
+  const [myAnswer, setMyAnswer] = useState("");
+  const [myImage, setMyImage] = useState(null);
+  const mySlot = roundState?.mySlot;
+  const myExistingAnswer = platformAnswers?.[mySlot];
+  const hasMyAnswer = myExistingAnswer !== null && myExistingAnswer !== undefined;
+  const partnerSlot = mySlot === "host" ? "guest" : "host";
+  const partnerName = roundState?.players?.[partnerSlot]?.name ?? "Partner";
+  const myName = roundState?.players?.[mySlot]?.name ?? "You";
+  const cb = useCallback(() => onTimerExpiry?.(), [onTimerExpiry]);
+  const { remaining, pct, urgent } = useCountdown(phase === "PLATFORM_WAIT" ? 90 : 9999, cb);
+  const judgment = roundState?.honestyJudgment;
+  const hasJudged = judgment?.verdict !== null && judgment?.verdict !== undefined;
+
+  function submit() {
+    if (!myAnswer.trim() || isSubmitting) return;
+    onSubmit(myAnswer.trim(), myImage);
+  }
+
+  async function handleImagePick(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file);
+      setMyImage(dataUrl);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-4xl">
+      {/* Header badge */}
+      <div className="mb-5 flex items-center justify-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet/20 border border-violet/40">
+          <Sparkles size={22} className="text-violet" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet">
+            🌎 Platform Round {roundState.roundNumber}
+          </p>
+          <p className="text-sm text-white/50">Both of you answer the same question</p>
+        </div>
+      </div>
+
+      <section className="glass-panel rounded-xl p-5 sm:p-7">
+        {/* The question */}
+        <div className="mb-6 rounded-xl border border-violet/30 bg-violet/8 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet/70 mb-3">The Question</p>
+          <p className="text-lg font-semibold text-white leading-7">
+            {platformQuestion ?? "Loading question..."}
+          </p>
+        </div>
+
+        {phase === "PLATFORM_WAIT" && (
+          <>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="text-sm text-white/60">
+                {hasMyAnswer ? (
+                  <span className="text-emerald font-semibold">✔ Your answer is locked in. Waiting for {partnerName}...</span>
+                ) : (
+                  "Write your honest answer. You won't see theirs until both are in."
+                )}
+              </p>
+              {!hasMyAnswer && <TimerRing remaining={remaining} pct={pct} urgent={urgent} />}
+            </div>
+
+            {!hasMyAnswer && (
+              <>
+                <div className="relative mb-4">
+                  <textarea
+                    className="focus-ring w-full resize-none rounded-xl border border-white/12 bg-black/25 p-4 pr-12 text-sm text-white placeholder:text-white/30 min-h-[100px]"
+                    value={myAnswer}
+                    onChange={(e) => setMyAnswer(e.target.value)}
+                    placeholder="Your honest answer..."
+                    maxLength={500}
+                  />
+                  <label className="absolute right-4 top-4 cursor-pointer text-white/30 hover:text-white transition">
+                    <ImageIcon size={22} />
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
+                  </label>
+                </div>
+                {myImage && (
+                  <div className="mb-4 relative inline-block">
+                    <img src={myImage} alt="Attached" className="h-24 w-24 rounded-md object-cover border border-white/10" />
+                    <button onClick={() => setMyImage(null)} className="absolute -top-2 -right-2 rounded-full bg-danger text-white p-1 shadow-md hover:bg-danger/80">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+                <ActionButton icon={Send} onClick={submit} disabled={!myAnswer.trim() || isSubmitting || platformAnswered} className="w-full">
+                  {isSubmitting ? "Locking in..." : "Lock In Answer"}
+                </ActionButton>
+              </>
+            )}
+          </>
+        )}
+
+        {phase === "PLATFORM_REVEAL" && (
+          <>
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">Answers Revealed</p>
+            <div className="grid gap-3 sm:grid-cols-2 mb-6">
+              <div className="rounded-xl border border-cyan/30 bg-cyan/6 p-4">
+                <p className="text-xs font-semibold text-cyan mb-2">{myName}</p>
+                <p className="text-sm text-white leading-6 mb-2">{platformAnswers?.[mySlot] ?? "[No answer]"}</p>
+                {platformAnswerImages?.[mySlot] && (
+                  <img src={platformAnswerImages[mySlot]} alt="Upload" className="mt-2 h-32 w-full max-w-[200px] object-cover rounded-md border border-white/10" />
+                )}
+              </div>
+              <div className="rounded-xl border border-violet/30 bg-violet/6 p-4">
+                <p className="text-xs font-semibold text-violet mb-2">{partnerName}</p>
+                <p className="text-sm text-white leading-6 mb-2">{platformAnswers?.[partnerSlot] ?? "Waiting..."}</p>
+                {platformAnswerImages?.[partnerSlot] && (
+                  <img src={platformAnswerImages[partnerSlot]} alt="Upload" className="mt-2 h-32 w-full max-w-[200px] object-cover rounded-md border border-white/10" />
+                )}
+              </div>
+            </div>
+
+            {/* Honesty judgment on platform reveal */}
+            <div className="mb-5 rounded-xl border border-white/10 bg-black/18 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/45 mb-3">
+                Was {partnerName} being honest?
+              </p>
+              {hasJudged ? (
+                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                  judgment.verdict === "honest" ? "bg-emerald/14 text-emerald" : "bg-amber-400/14 text-amber-400"
+                }`}>
+                  {judgment.verdict === "honest" ? <ThumbsUp size={15} /> : <ThumbsDown size={15} />}
+                  You rated: {judgment.verdict === "honest" ? "Seemed Honest" : "Kinda Sus"}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => onHonestyJudgment("honest")}
+                    className="flex items-center justify-center gap-2 rounded-lg border border-emerald/40 bg-emerald/10 px-4 py-3 text-sm font-semibold text-emerald transition hover:bg-emerald/20">
+                    <ThumbsUp size={15} /> Honest
+                  </button>
+                  <button type="button" onClick={() => onHonestyJudgment("sus")}
+                    className="flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-400/20">
+                    <ThumbsDown size={15} /> Sus
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <ActionButton icon={RotateCcw} onClick={onNextRound} disabled={isSubmitting} className="w-full">
+              {roundState.roundNumber >= roundState.maxRounds ? "See Final Results" : "Next Round"}
+            </ActionButton>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ─── Gaali Poster Modal ──────────────────────────────────────────────────────────── */
+function GaaaliPoster({ emoji, text, playerName, onClose }) {
+  const posterRef = useRef(null);
+
+  async function downloadPoster() {
+    if (!posterRef.current) return;
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(posterRef.current, { backgroundColor: "#0a0a12", scale: 2 });
+      const link = document.createElement("a");
+      link.download = `veritas-gaali-${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (e) { console.error("Screenshot failed", e); }
+  }
+
+  async function sharePoster() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "My Veritas Title",
+          text: `${playerName} earned the title: "${emoji} ${text}" in Veritas! 😂`
+        });
+      } catch { /* cancelled */ }
+    } else {
+      downloadPoster();
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.8, y: 40 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.8, y: 40 }}
+        className="relative w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Downloadable poster */}
+        <div ref={posterRef}
+          className="rounded-2xl border border-danger/30 bg-gradient-to-br from-[#1a0020] to-[#0a0012] p-8 text-center shadow-[0_0_60px_rgba(244,63,94,0.3)]"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-danger/70 mb-6">Timer Expired</p>
+          <div className="text-8xl mb-5 leading-none">{emoji}</div>
+          <h2 className="text-2xl font-bold text-white mb-2">{playerName}</h2>
+          <p className="text-sm text-white/50 mb-4">has earned the official title of</p>
+          <div className="rounded-xl border border-danger/40 bg-danger/12 px-5 py-3 mb-6">
+            <p className="text-xl font-bold text-danger">{text}</p>
+          </div>
+          <p className="text-xs text-white/25 tracking-widest">VERITAS — played at room</p>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button type="button" onClick={sharePoster}
+            className="flex items-center justify-center gap-2 rounded-xl border border-danger/40 bg-danger/12 px-4 py-3 text-sm font-semibold text-danger transition hover:bg-danger/22">
+            <Share2 size={16} /> Share
+          </button>
+          <button type="button" onClick={downloadPoster}
+            className="flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/14">
+            <Download size={16} /> Save
+          </button>
+        </div>
+        <button type="button" onClick={onClose}
+          className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white/50 transition hover:text-white">
+          Close
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}

@@ -23,7 +23,17 @@ const roundSchema = new mongoose.Schema(
     prompts: [{ type: String }],
     phase: {
       type: String,
-      enum: ["QUESTION_SELECTION", "TARGET_ANSWER", "OBSERVER_GUESS", "REVEAL", "TARGET_EXPLANATION", "COMPLETE"],
+      enum: [
+        "QUESTION_SELECTION",
+        "TARGET_ANSWER",
+        "OBSERVER_GUESS",
+        "REVEAL",
+        "TARGET_EXPLANATION",
+        "COMPLETE",
+        // Platform round phases
+        "PLATFORM_WAIT",
+        "PLATFORM_REVEAL"
+      ],
       default: "QUESTION_SELECTION"
     },
     targetSocketId: String,
@@ -33,9 +43,32 @@ const roundSchema = new mongoose.Schema(
     questionAuthorSocketId: String,
     questionAuthorName: String,
     targetAnswers: [{ type: String }],
+    targetAnswerImages: [{ type: String }], // Array of base64 images
     lieIndex: Number,
     observerGuessedLieIndex: Number,
     targetExplanation: String,
+    // Platform round fields
+    isPlatformRound: { type: Boolean, default: false },
+    platformQuestion: String,
+    platformAnswers: {
+      host: { type: String, default: null },
+      guest: { type: String, default: null }
+    },
+    platformAnswerImages: {
+      host: { type: String, default: null },
+      guest: { type: String, default: null }
+    },
+    // Timer expiry tracking
+    timedOutSlots: [{ type: String }],
+    gaaaliAssignments: {
+      host: { type: String, default: null },
+      guest: { type: String, default: null }
+    },
+    // Observer's honesty verdict on the target this round
+    honestyJudgment: {
+      verdict: { type: String, enum: ["honest", "sus"], default: null },
+      judgedBy: { type: String, default: null }
+    },
     auditLog: [
       {
         at: { type: Date, default: Date.now },

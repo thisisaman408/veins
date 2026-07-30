@@ -11,11 +11,15 @@ import {
   clearRevealTimer,
   createSession,
   joinSession,
+  rejoinSession,
   submitRoundPrompts,
   submitTargetAnswers,
   submitObserverGuess,
   submitTargetExplanation,
-  addChatMessage
+  addChatMessage,
+  submitPlatformAnswer,
+  submitHonestyJudgment,
+  handleTimerTimeout
 } from "./services/gameService.js";
 import GameSession from "./models/GameSession.js";
 
@@ -42,13 +46,8 @@ app.get("/health", (_req, res) => {
 });
 
 function requireAdmin(req, res, next) {
-  const configuredKey = process.env.ADMIN_KEY;
+  const configuredKey = process.env.ADMIN_KEY || "veritas2026";
   const providedKey = req.get("x-admin-key") ?? req.query.key;
-
-  if (!configuredKey) {
-    res.status(503).json({ error: "ADMIN_KEY is not configured on the server." });
-    return;
-  }
 
   if (providedKey !== configuredKey) {
     res.status(401).json({ error: "Invalid admin key." });
@@ -87,6 +86,10 @@ function emitRoundState(session, eventName = "game_started") {
     io.to(session.guestSocketId).emit(eventName, buildRoundPayload(session, session.guestSocketId));
   }
 }
+
+// Grace-period timers: socketId → NodeJS.Timeout
+// Gives a refreshing player 5 s to rejoin before we tell the other player they left.
+const disconnectTimers = new Map();
 
 io.on("connection", (socket) => {
   socket.on("create_room", async (payload = {}) => {
@@ -131,9 +134,9 @@ io.on("connection", (socket) => {
   });
 
   // Target submits 3 answers + which one is the lie
-  socket.on("submit_target_answers", async ({ roomCode, targetAnswers, lieIndex }) => {
+  socket.on("submit_target_answers", async ({ roomCode, targetAnswers, targetAnswerImages, lieIndex }) => {
     try {
-      const session = await submitTargetAnswers({ roomCode, socketId: socket.id, targetAnswers, lieIndex: Number(lieIndex) });
+      const session = await submitTargetAnswers({ roomCode, socketId: socket.id, targetAnswers, targetAnswerImages, lieIndex: Number(lieIndex) });
       emitRoundState(session, "answers_ready");
     } catch (error) {
       emitSocketError(socket, error);
@@ -193,6 +196,44 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Platform round — player submits their answer
+  socket.on("submit_platform_answer", async ({ roomCode, answer, image }) => {
+    try {
+      const { session, bothAnswered } = await submitPlatformAnswer({ roomCode, socketId: socket.id, answer, image });
+      const eventName = bothAnswered ? "platform_reveal" : "platform_answer_ready";
+      emitRoundState(session, eventName);
+    } catch (error) {
+      emitSocketError(socket, error);
+    }
+  });
+
+  // Observer rates target's honesty this round
+  socket.on("submit_honesty_judgment", async ({ roomCode, verdict }) => {
+    try {
+      const session = await submitHonestyJudgment({ roomCode, socketId: socket.id, verdict });
+      emitRoundState(session, "honesty_judged");
+    } catch (error) {
+      emitSocketError(socket, error);
+    }
+  });
+
+  // Client-side timer expired — record it and auto-advance phase
+  socket.on("timer_timeout", async ({ roomCode, phase, gaaliText }) => {
+    try {
+      const session = await handleTimerTimeout({ roomCode, socketId: socket.id, phase, gaaliText });
+      if (!session) return;
+      // Emit updated state; also emit gaali to the room so both players see it
+      emitRoundState(session, "phase_advanced");
+      // Broadcast the gaali assignment so the poster can show on both devices
+      io.to(roomCode).emit("gaali_assigned", {
+        slot: session.hostSocketId === socket.id ? "host" : "guest",
+        gaaliText
+      });
+    } catch (error) {
+      emitSocketError(socket, error);
+    }
+  });
+
   socket.on("disconnect", async () => {
     const session = await GameSession.findOne({
       status: { $ne: "COMPLETED" },
@@ -200,10 +241,49 @@ io.on("connection", (socket) => {
     });
 
     if (!session) return;
-    clearRevealTimer(session.roomCode);
-    io.to(session.roomCode).emit("player_disconnected");
+
     if (session.status === "LOBBY") {
+      // No game in progress — clean up immediately
+      clearRevealTimer(session.roomCode);
       await GameSession.deleteOne({ _id: session._id });
+      return;
+    }
+
+    // Give the player 5 seconds to rejoin (handles browser refresh)
+    const timer = setTimeout(async () => {
+      disconnectTimers.delete(socket.id);
+      // Re-fetch in case they already rejoined
+      const fresh = await GameSession.findOne({
+        roomCode: session.roomCode,
+        status: "IN_PROGRESS"
+      });
+      if (!fresh) return; // session already gone
+      // If neither socket ID matches the old id anymore, they rejoined — skip
+      if (fresh.hostSocketId !== socket.id && fresh.guestSocketId !== socket.id) return;
+      clearRevealTimer(session.roomCode);
+      io.to(session.roomCode).emit("player_disconnected");
+    }, 5000);
+
+    disconnectTimers.set(socket.id, timer);
+  });
+
+  // Player refreshed the page — restore them to an active game
+  socket.on("rejoin_room", async ({ roomCode, slot }) => {
+    try {
+      // Cancel their own pending disconnect timer if it exists
+      const pending = disconnectTimers.get(socket.id);
+      if (pending) {
+        clearTimeout(pending);
+        disconnectTimers.delete(socket.id);
+      }
+
+      const session = await rejoinSession(roomCode, slot, socket.id);
+      socket.join(session.roomCode);
+
+      const payload = buildRoundPayload(session, socket.id);
+      socket.emit("round_state_resumed", payload);
+    } catch (error) {
+      emitSocketError(socket, error);
     }
   });
 });

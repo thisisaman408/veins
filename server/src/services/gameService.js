@@ -1,6 +1,9 @@
 import GameSession from "../models/GameSession.js";
 import { getRelationshipProfile } from "../data/relationships.js";
 import { buildQuestionSuggestions } from "./questionGenerator.js";
+import { generateDarkQuestion, getFallbackDarkQuestion } from "./aiService.js";
+
+const PLATFORM_ROUNDS = new Set([4, 7, 9]);
 
 const revealTimers = new Map();
 
@@ -62,13 +65,39 @@ function getRoundSlots(session, roundNumber = session.currentRound) {
   };
 }
 
-function buildRound(session, roundNumber) {
+async function buildRound(session, roundNumber) {
   const { targetSlot, observerSlot } = getRoundSlots(session, roundNumber);
   const target = getPlayerBySlot(session, targetSlot);
   const observer = getPlayerBySlot(session, observerSlot);
+  const isPlatformRound = PLATFORM_ROUNDS.has(roundNumber);
+
+  let platformQuestion = null;
+  if (isPlatformRound) {
+    // Build minimal context from past rounds to avoid token waste
+    const pastTopics = (session.roundsData ?? [])
+      .slice(0, roundNumber - 1)
+      .filter(r => r.prompts?.length > 0)
+      .map(r => r.prompts[0]?.slice(0, 60))
+      .filter(Boolean);
+    try {
+      platformQuestion = await generateDarkQuestion({
+        relationshipType: session.hostRelationship?.type ?? "close_friends",
+        roundNumber,
+        pastTopics
+      });
+    } catch {
+      platformQuestion = getFallbackDarkQuestion();
+    }
+  }
 
   return {
-    phase: "QUESTION_SELECTION",
+    phase: isPlatformRound ? "PLATFORM_WAIT" : "QUESTION_SELECTION",
+    isPlatformRound,
+    platformQuestion,
+    platformAnswers: { host: null, guest: null },
+    timedOutSlots: [],
+    gaaaliAssignments: { host: null, guest: null },
+    honestyJudgment: { verdict: null, judgedBy: null },
     targetSocketId: target.socketId,
     targetName: target.name,
     observerSocketId: observer.socketId,
@@ -83,6 +112,7 @@ function buildRound(session, roundNumber) {
         action: "round_started",
         details: {
           roundNumber,
+          isPlatformRound,
           targetName: target.name,
           observerName: observer.name
         }
@@ -150,7 +180,7 @@ export async function joinSession(roomCode, guestSocketId, payload = {}) {
   session.status = "IN_PROGRESS";
   session.currentRound = 1;
   session.firstTargetSlot = Math.random() >= 0.5 ? "host" : "guest";
-  session.roundsData = [buildRound(session, 1)];
+  session.roundsData = [await buildRound(session, 1)];
   addAudit(session, guest, "player_joined", {
     guestRelationship,
     firstTargetName: session.roundsData[0].targetName,
@@ -201,7 +231,17 @@ export function buildRoundPayload(session, socketId) {
       socketId: round.observerSocketId
     },
     chatMessages: session.chatMessages,
-    finalMetrics: session.finalMetrics
+    finalMetrics: session.finalMetrics,
+    // Platform round data
+    isPlatformRound: round.isPlatformRound ?? false,
+    platformQuestion: round.platformQuestion ?? null,
+    platformAnswers: round.platformAnswers ?? { host: null, guest: null },
+    // Timer + gaali data
+    timedOutSlots: round.timedOutSlots ?? [],
+    gaaaliAssignments: round.gaaaliAssignments ?? { host: null, guest: null },
+    myGaali: round.gaaaliAssignments?.[mySlot] ?? null,
+    // Honesty judgment
+    honestyJudgment: round.honestyJudgment ?? { verdict: null, judgedBy: null }
   };
 }
 
@@ -227,7 +267,7 @@ export async function submitRoundPrompts({ roomCode, socketId, prompts }) {
   return session;
 }
 
-export async function submitTargetAnswers({ roomCode, socketId, targetAnswers, lieIndex }) {
+export async function submitTargetAnswers({ roomCode, socketId, targetAnswers, targetAnswerImages = [], lieIndex }) {
   const session = await GameSession.findOne({ roomCode });
   if (!session) throw new Error("Room not found.");
   if (session.status !== "IN_PROGRESS") throw new Error("Game is not in progress.");
@@ -242,6 +282,7 @@ export async function submitTargetAnswers({ roomCode, socketId, targetAnswers, l
 
   const actor = { socketId, name: round.targetName };
   round.targetAnswers = targetAnswers.map(a => String(a).trim());
+  round.targetAnswerImages = Array.isArray(targetAnswerImages) ? targetAnswerImages : [];
   round.lieIndex = lieIndex;
   round.phase = "OBSERVER_GUESS";
   
@@ -326,7 +367,7 @@ export async function advanceRound(roomCode, socketId) {
   }
 
   session.currentRound += 1;
-  session.roundsData.push(buildRound(session, session.currentRound));
+  session.roundsData.push(await buildRound(session, session.currentRound));
   await session.save();
   return { session, gameOver: false };
 }
@@ -346,9 +387,12 @@ export async function completeSession(session) {
 export async function buildHistory(session) {
   const freshSession = await GameSession.findById(session._id);
   return freshSession.roundsData
-    .filter((round) => round.targetAnswers && round.targetAnswers.length > 0)
+    .filter((round) => round.targetAnswers && round.targetAnswers.length > 0 || round.isPlatformRound)
     .map((round, index) => ({
       roundNumber: index + 1,
+      isPlatformRound: round.isPlatformRound ?? false,
+      platformQuestion: round.platformQuestion ?? null,
+      platformAnswers: round.platformAnswers ?? { host: null, guest: null },
       prompts: round.prompts,
       targetPlayer: {
         name: round.targetName,
@@ -362,7 +406,10 @@ export async function buildHistory(session) {
       lieIndex: round.lieIndex,
       observerGuessedLieIndex: round.observerGuessedLieIndex,
       targetExplanation: round.targetExplanation,
-      isCorrect: round.lieIndex === round.observerGuessedLieIndex
+      isCorrect: round.lieIndex === round.observerGuessedLieIndex,
+      honestyJudgment: round.honestyJudgment ?? { verdict: null, judgedBy: null },
+      timedOutSlots: round.timedOutSlots ?? [],
+      gaaaliAssignments: round.gaaaliAssignments ?? { host: null, guest: null }
     }));
 }
 
@@ -405,6 +452,166 @@ export async function addChatMessage({ roomCode, socketId, text }) {
     session.chatMessages.shift();
   }
   
+  await session.save();
+  return session;
+}
+
+/**
+ * Reconnect a player who refreshed the page.
+ * Finds the active IN_PROGRESS session by roomCode + slot, then swaps
+ * the stale socketId for the fresh one the new connection produced.
+ */
+export async function rejoinSession(roomCode, slot, newSocketId) {
+  if (!["host", "guest"].includes(slot)) throw new Error("Invalid slot.");
+
+  const session = await GameSession.findOne({
+    roomCode,
+    status: "IN_PROGRESS"
+  });
+  if (!session) throw new Error("Active session not found for that room code.");
+
+  // Swap socket IDs
+  if (slot === "host") {
+    session.hostSocketId = newSocketId;
+    if (session.players.host) session.players.host.socketId = newSocketId;
+  } else {
+    session.guestSocketId = newSocketId;
+    if (session.players.guest) session.players.guest.socketId = newSocketId;
+  }
+
+  // Re-derive target/observer sockets in the current round from the freshly
+  // updated canonical player records, so role detection in buildRoundPayload works.
+  const round = session.roundsData[session.currentRound - 1];
+  if (round) {
+    const { targetSlot } = getRoundSlots(session);
+    const targetPlayer = getPlayerBySlot(session, targetSlot);
+    const observerSlot = targetSlot === "host" ? "guest" : "host";
+    const observerPlayer = getPlayerBySlot(session, observerSlot);
+    round.targetSocketId   = targetPlayer.socketId;
+    round.observerSocketId = observerPlayer.socketId;
+  }
+
+  addAudit(session, { name: session.players[slot]?.name, socketId: newSocketId }, "player_rejoined", {
+    slot,
+    roundNumber: session.currentRound
+  });
+
+  await session.save();
+  return session;
+}
+
+/**
+ * Store one player's answer for a platform round.
+ * When both players have answered, flip phase → PLATFORM_REVEAL.
+ */
+export async function submitPlatformAnswer({ roomCode, socketId, answer, image }) {
+  const session = await GameSession.findOne({ roomCode, status: "IN_PROGRESS" });
+  if (!session) throw new Error("Room not found.");
+
+  const round = session.roundsData[session.currentRound - 1];
+  if (!round) throw new Error("Round not initialised.");
+  if (!round.isPlatformRound) throw new Error("Not a platform round.");
+  if (round.phase !== "PLATFORM_WAIT") throw new Error("Not in answer phase.");
+
+  const slot = getSlotForSocket(session, socketId);
+  if (!slot) throw new Error("You are not in this room.");
+
+  const cleaned = String(answer ?? "").trim().slice(0, 500);
+  round.platformAnswers = round.platformAnswers ?? { host: null, guest: null };
+  round.platformAnswers[slot] = cleaned;
+  
+  if (image) {
+    round.platformAnswerImages = round.platformAnswerImages ?? { host: null, guest: null };
+    round.platformAnswerImages[slot] = image;
+  }
+
+  // Mark subdocument modified (nested object)
+  session.markModified("roundsData");
+
+  const bothAnswered = round.platformAnswers.host !== null && round.platformAnswers.guest !== null;
+  if (bothAnswered) round.phase = "PLATFORM_REVEAL";
+
+  addAudit(session, { socketId, name: session.players[slot]?.name }, "platform_answer_submitted", { slot, bothAnswered });
+  await session.save();
+  return { session, bothAnswered };
+}
+
+/**
+ * Observer submits a honesty verdict ("honest" | "sus") about the target this round.
+ */
+export async function submitHonestyJudgment({ roomCode, socketId, verdict }) {
+  if (!["honest", "sus"].includes(verdict)) throw new Error("Invalid verdict.");
+
+  const session = await GameSession.findOne({ roomCode, status: "IN_PROGRESS" });
+  if (!session) throw new Error("Room not found.");
+
+  const round = session.roundsData[session.currentRound - 1];
+  if (!round) throw new Error("Round not initialised.");
+  if (round.phase !== "REVEAL" && round.phase !== "PLATFORM_REVEAL")
+    throw new Error("Judgment only allowed during reveal.");
+
+  const slot = getSlotForSocket(session, socketId);
+  if (!slot) throw new Error("You are not in this room.");
+
+  const playerName = session.players[slot]?.name ?? "Unknown";
+  round.honestyJudgment = { verdict, judgedBy: playerName };
+  session.markModified("roundsData");
+
+  // Track honesty stats in finalMetrics
+  if (!session.finalMetrics) session.finalMetrics = { roundsWon: 0, roundsLost: 0, susCount: 0, honestCount: 0 };
+  if (verdict === "sus") session.finalMetrics.susCount = (session.finalMetrics.susCount ?? 0) + 1;
+  else session.finalMetrics.honestCount = (session.finalMetrics.honestCount ?? 0) + 1;
+
+  addAudit(session, { socketId, name: playerName }, "honesty_judgment", { verdict });
+  await session.save();
+  return session;
+}
+
+/**
+ * Called when a client-side timer fires. Records the timeout, assigns a gaali,
+ * and auto-advances the phase so the game never gets stuck.
+ */
+export async function handleTimerTimeout({ roomCode, socketId, phase, gaaliText }) {
+  const session = await GameSession.findOne({ roomCode, status: "IN_PROGRESS" });
+  if (!session) return null;
+
+  const round = session.roundsData[session.currentRound - 1];
+  if (!round || round.phase !== phase) return null; // already advanced
+
+  const slot = getSlotForSocket(session, socketId);
+  if (!slot) return null;
+
+  // Record timed-out slot + gaali
+  round.timedOutSlots = round.timedOutSlots ?? [];
+  if (!round.timedOutSlots.includes(slot)) round.timedOutSlots.push(slot);
+
+  round.gaaaliAssignments = round.gaaaliAssignments ?? { host: null, guest: null };
+  if (gaaliText) round.gaaaliAssignments[slot] = gaaliText;
+
+  // Auto-advance phase
+  if (phase === "QUESTION_SELECTION") {
+    // Observer timed out — use fallback questions
+    const { getFallbackDarkQuestion } = await import("./aiService.js");
+    round.prompts = [
+      "What's something you've never told the person sitting across from you?",
+      "What's a decision you regret that you've never spoken about?",
+      "What's one lie you've told that you never corrected?"
+    ];
+    round.phase = "TARGET_ANSWER";
+  } else if (phase === "TARGET_ANSWER") {
+    // Target timed out — auto-submit blank answers
+    round.targetAnswers = ["[No answer]", "[No answer]", "[No answer]"];
+    round.lieIndex = 0;
+    round.phase = "OBSERVER_GUESS";
+  } else if (phase === "PLATFORM_WAIT") {
+    round.platformAnswers = round.platformAnswers ?? { host: null, guest: null };
+    round.platformAnswers[slot] = "[No answer]";
+    const bothAnswered = round.platformAnswers.host !== null && round.platformAnswers.guest !== null;
+    if (bothAnswered) round.phase = "PLATFORM_REVEAL";
+  }
+
+  session.markModified("roundsData");
+  addAudit(session, { socketId, name: session.players[slot]?.name }, "timer_expired", { slot, phase, gaaliText });
   await session.save();
   return session;
 }
