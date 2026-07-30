@@ -1910,7 +1910,8 @@ export default App;
 function TimerRing({ remaining, pct, urgent }) {
   const r = 22;
   const circ = 2 * Math.PI * r;
-  const dash = circ * pct;
+  // offset = 0 means full circle (start); offset = circ means empty (done)
+  const offset = circ * (1 - pct);
   const mins = Math.floor(remaining / 60);
   const secs = String(remaining % 60).padStart(2, "0");
   const label = `${mins}:${secs}`;
@@ -1918,14 +1919,17 @@ function TimerRing({ remaining, pct, urgent }) {
   return (
     <div className={`relative flex shrink-0 h-16 w-16 items-center justify-center ${urgent ? "animate-pulse" : ""}`}>
       <svg className="absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
+        {/* Track */}
         <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
+        {/* Progress arc — drains clockwise */}
         <circle
           cx="28" cy="28" r={r} fill="none"
           stroke={urgent ? "#f43f5e" : "#06B6D4"}
           strokeWidth="3.5"
           strokeLinecap="round"
-          strokeDasharray={`${dash} ${circ}`}
-          style={{ transition: "stroke-dasharray 0.5s linear, stroke 0.3s" }}
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s" }}
         />
       </svg>
       <div className="text-center">
