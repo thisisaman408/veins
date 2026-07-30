@@ -240,7 +240,7 @@ function App() {
   function createRoom() {
     if (!nameReady) { setError("Enter your name first."); return; }
     setError("");
-    socketRef.current?.emit("create_room", { playerName: playerName.trim(), relationshipType, maxRounds: 10 });
+    socketRef.current?.emit("create_room", { playerName: playerName.trim(), relationshipType, maxRounds: 5 });
   }
 
   function joinRoom(event) {

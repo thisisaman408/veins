@@ -361,8 +361,19 @@ export async function advanceRound(roomCode, socketId) {
   }
 
   const round = session.roundsData[session.currentRound - 1];
-  if (!round || round.observerGuessedLieIndex === undefined) {
+  if (!round) {
     throw new Error("Current round is not complete.");
+  }
+  if (round.isPlatformRound) {
+    // Both players must have rated honesty
+    if (!round.honestyJudgment || round.honestyJudgment.verdict === null) {
+      throw new Error("Current round is not complete. Both players must rate honesty.");
+    }
+  } else {
+    // Normal round needs a lie guess
+    if (round.observerGuessedLieIndex === undefined) {
+      throw new Error("Current round is not complete.");
+    }
   }
 
   const actor = socketId === session.hostSocketId ? session.players.host : session.players.guest;
